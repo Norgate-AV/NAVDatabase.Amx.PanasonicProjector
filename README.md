@@ -13,18 +13,107 @@
 
 ---
 
-Description
+AMX NetLinx module for Panasonic projectors.
 
-## Contents 📖
+## Contents :book:
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
+-   [Installation :zap:](#installation-zap)
+-   [Usage :rocket:](#usage-rocket)
 -   [Team :soccer:](#team-soccer)
 -   [Contributors :sparkles:](#contributors-sparkles)
 -   [LICENSE :balance_scale:](#license-balance_scale)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
+## Installation :zap:
+
+This module can be installed using [Scoop](https://scoop.sh/).
+
+```powershell
+scoop bucket add norgateav-amx https://github.com/Norgate-AV/scoop-norgateav-amx
+scoop install navdatabase-amx-panasonic-projector
+```
+
+## Usage :rocket:
+
+```netlinx
+DEFINE_DEVICE
+
+// The real device
+dvPanasonicProjector            = 5001:1:0          // Serial/RS232 Connection
+
+// or
+// dvPanasonicProjector         = 0:4:0             // IP/Socket Connection
+
+// Virtual Devices
+vdvPanasonicProjector           = 33201:1:0         // The interface between the device and the control system
+
+// User Interface
+dvTP                            = 10001:1:0         // Main UI
+
+
+define_module 'mPanasonicProjector' PanasonicProjectorComm(vdvPanasonicProjector, dvPanasonicProjector)
+
+
+DEFINE_EVENT
+
+data_event[vdvPanasonicProjector] {
+    online: {
+        // If using IP/Socket Connection
+        // send_command data.device, "'PROPERTY-IP_ADDRESS,', '192.168.1.21'"
+
+        // Set an alternative baud rate for serial connection. Default is 9600
+        // send_command data.device, "'PROPERTY-BAUD_RATE,', '38400'"
+
+        // send_command data.device, "'PROPERTY-USER_NAME,', 'admin1'"
+        // send_command data.device, "'PROPERTY-PASSWORD,', 'panasonic'"
+    }
+}
+
+
+// Trigger power state
+button_event[dvTP, 1]
+button_event[dvTP, 2] {
+    push: {
+        switch (button.input.channel) {
+            case 1: {
+                pulse[vdvPanasonicProjector, PWR_ON]
+
+                // or
+                send_command vdvPanasonicProjector, "'POWER-ON'"
+            }
+            case 2: {
+                pulse[vdvPanasonicProjector, PWR_OFF]
+
+                // or
+                send_command vdvPanasonicProjector, "'POWER-OFF'"
+            }
+        }
+    }
+}
+
+
+// Trigger input switch
+button_event[dvTP, 11]
+button_event[dvTP, 12] {
+    push: {
+        // Triggering an input switch will automatically turn the projector on
+        // and switch to the selected input
+        switch (button.input.channel) {
+            case 11: {
+                send_command vdvPanasonicProjector, "'INPUT-HDMI,1'"
+            }
+            case 12: {
+                send_command vdvPanasonicProjector, "'INPUT-DIGITAL_LINK,1'"
+            }
+        }
+    }
+}
+
+```
 
 ## Team :soccer:
 
