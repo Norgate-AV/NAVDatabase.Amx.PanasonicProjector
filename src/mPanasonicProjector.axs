@@ -1,7 +1,6 @@
 MODULE_NAME='mPanasonicProjector'   (
                                         dev vdvObject,
-                                        dev dvPortRS232,
-                                        dev dvPortIP
+                                        dev dvPort
                                     )
 
 (***********************************************************)
@@ -133,8 +132,6 @@ DEFINE_VARIABLE
 volatile _NAVProjector uProj
 volatile _NAVModule uModule
 
-volatile dev dvaCommObjects[2]
-
 volatile long ltIPClientCheck[] = { 3000 }
 
 volatile integer iLoop
@@ -162,7 +159,7 @@ volatile integer iLamp1QueryCommand
 volatile long ltDrive[] = { 200 }
 
 volatile integer iSemaphore
-volatile char cRxBuffer[2][NAV_MAX_BUFFER]
+volatile char cRxBuffer[NAV_MAX_BUFFER]
 
 volatile integer iPowerBusy
 
@@ -203,8 +200,8 @@ DEFINE_MUTUALLY_EXCLUSIVE
 (* EXAMPLE: DEFINE_FUNCTION <RETURN_TYPE> <NAME> (<PARAMETERS>) *)
 (* EXAMPLE: DEFINE_CALL '<NAME>' (<PARAMETERS>) *)
 define_function SendStringRaw(char cPayload[]) {
-    NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'String To ', NAVConvertDPSToAscii(dvaCommObjects[iCommMode]), '-[', cPayload, ']'")
-    send_string dvaCommObjects[iCommMode], "cPayload"
+    NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'String To ', NAVConvertDPSToAscii(dvPort), '-[', cPayload, ']'")
+    send_string dvPort, "cPayload"
 }
 
 
@@ -245,7 +242,7 @@ define_function TimeOut() {
 
         if (iCommMode == COMM_MODE_IP_DIRECT) {
             //uIPConnection.IsConnected = false
-            NAVClientSocketClose(dvPortIP.PORT)
+            NAVClientSocketClose(dvPort.PORT)
         }
     }
 }
@@ -280,14 +277,14 @@ define_function Process() {
 
     iSemaphore = true
 
-    while (length_array(cRxBuffer[iCommMode]) && NAVContains(cRxBuffer[iCommMode], COMM_MODE_DELIMITER[iCommMode])) {
-        cTemp = remove_string(cRxBuffer[iCommMode], COMM_MODE_DELIMITER[iCommMode], 1)
+    while (length_array(cRxBuffer) && NAVContains(cRxBuffer, COMM_MODE_DELIMITER[iCommMode])) {
+        cTemp = remove_string(cRxBuffer, COMM_MODE_DELIMITER[iCommMode], 1)
 
         if (!length_array(cTemp)) {
             continue
         }
 
-        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'Parsing String From ', NAVConvertDPSToAscii(dvaCommObjects[iCommMode]), '-[', cTemp, ']'")
+        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'Parsing String From ', NAVConvertDPSToAscii(dvPort), '-[', cTemp, ']'")
 
         cTemp = NAVStripCharsFromRight(cTemp, 1)    //Remove delimiter
 
@@ -544,7 +541,7 @@ define_function MaintainIPConnection() {
         return
     }
 
-    NAVClientSocketOpen(dvPortIP.PORT, uIPConnection.Address, uIPConnection.Port, IP_TCP)
+    NAVClientSocketOpen(dvPort.PORT, uIPConnection.Address, uIPConnection.Port, IP_TCP)
 }
 
 
@@ -552,13 +549,9 @@ define_function MaintainIPConnection() {
 (*                STARTUP CODE GOES BELOW                  *)
 (***********************************************************)
 DEFINE_START {
-    create_buffer dvPortRS232, cRxBuffer[COMM_MODE_SERIAL]
-    create_buffer dvPortIP, cRxBuffer[COMM_MODE_IP_DIRECT]
+    create_buffer dvPort, cRxBuffer
 
     uIPConnection.Port = DEFAULT_TCP_PORT
-
-    dvaCommObjects[1] = dvPortRS232
-    dvaCommObjects[2] = dvPortIP
 }
 
 (***********************************************************)
@@ -566,44 +559,22 @@ DEFINE_START {
 (***********************************************************)
 DEFINE_EVENT
 
-data_event[dvPortRS232] {
+data_event[dvPort] {
     online: {
         if (data.device.number != 0) {
-            send_command data.device, "'SET BAUD ', cBaudRate, ', N, 8, 1 485 DISABLE'"
-            send_command data.device, "'B9MOFF'"
-            send_command data.device, "'CHARD-0'"
-            send_command data.device, "'CHARDM-0'"
-            send_command data.device, "'HSOFF'"
+            NAVCommand(data.device, "'SET BAUD ', cBaudRate, ', N, 8, 1 485 DISABLE'")
+            NAVCommand(data.device, "'B9MOFF'")
+            NAVCommand(data.device, "'CHARD-0'")
+            NAVCommand(data.device, "'CHARDM-0'")
+            NAVCommand(data.device, "'HSOFF'")
         }
 
-        if (!timeline_active(TL_DRIVE)) {
-            NAVTimelineStart(TL_DRIVE, ltDrive, timeline_absolute, timeline_repeat)
-        }
-    }
-    string: {
-        [vdvObject, DEVICE_COMMUNICATING] = true
-        [vdvObject, DATA_INITIALIZED] = true
-
-        TimeOut()
-
-        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'String From ', NAVConvertDPSToAscii(dvaCommObjects[iCommMode]), '-[', data.text, ']'")
-
-        if (!iSemaphore) { Process() }
-    }
-}
-
-
-data_event[dvPortIP] {
-    online: {
         if (data.device.number == 0) {
             uIPConnection.IsConnected = true
-            iCommMode = COMM_MODE_IP_DIRECT
-            NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'PANASONIC_PROJECTOR_IP_ONLINE<', NAVStringSurroundWith(NAVDeviceToString(dvPortIP), '[', ']'), '>'")
+            // iCommMode = COMM_MODE_IP_DIRECT
         }
 
-        if (!timeline_active(TL_DRIVE)) {
-            NAVTimelineStart(TL_DRIVE, ltDrive, timeline_absolute, timeline_repeat)
-        }
+        NAVTimelineStart(TL_DRIVE, ltDrive, timeline_absolute, timeline_repeat)
     }
     string: {
         [vdvObject, DEVICE_COMMUNICATING] = true
@@ -611,7 +582,7 @@ data_event[dvPortIP] {
 
         TimeOut()
 
-        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'String From ', NAVConvertDPSToAscii(dvaCommObjects[iCommMode]), '-[', data.text, ']'")
+        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'String From ', NAVConvertDPSToAscii(data.device), '-[', data.text, ']'")
 
         if (!iSemaphore) { Process() }
     }
@@ -620,9 +591,9 @@ data_event[dvPortIP] {
             uIPConnection.IsConnected = false
             NAVClientSocketClose(data.device.port)
 
-            iCommMode = COMM_MODE_SERIAL
+            // iCommMode = COMM_MODE_SERIAL
 
-            NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'PANASONIC_PROJECTOR_IP_OFFLINE<', NAVStringSurroundWith(NAVDeviceToString(dvPortIP), '[', ']'), '>'")
+            // NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'PANASONIC_PROJECTOR_IP_OFFLINE<', NAVStringSurroundWith(NAVDeviceToString(dvPortIP), '[', ']'), '>'")
         }
     }
     onerror: {
@@ -630,9 +601,9 @@ data_event[dvPortIP] {
             uIPConnection.IsConnected = false
             //NAVClientSocketClose(data.device.port)
 
-            iCommMode = COMM_MODE_SERIAL
+            // iCommMode = COMM_MODE_SERIAL
 
-            NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'PANASONIC_PROJECTOR_IP_ONERROR<', NAVStringSurroundWith(NAVDeviceToString(dvPortIP), '[', ']'), '>'")
+            // NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'PANASONIC_PROJECTOR_IP_ONERROR<', NAVStringSurroundWith(NAVDeviceToString(dvPortIP), '[', ']'), '>'")
         }
     }
 }
@@ -683,8 +654,8 @@ data_event[vdvObject] {
                     case 'BAUD_RATE': {
                         cBaudRate = cCmdParam[2]
 
-                        if ((iCommMode == COMM_MODE_SERIAL) && device_id(dvaCommObjects[iCommMode])) {
-                            send_command dvaCommObjects[iCommMode], "'SET BAUD ', cBaudRate, ', N, 8, 1 485 DISABLE'"
+                        if ((iCommMode == COMM_MODE_SERIAL) && device_id(dvPort)) {
+                            send_command dvPort, "'SET BAUD ', cBaudRate, ', N, 8, 1 485 DISABLE'"
                         }
                     }
                     case 'USER_NAME': {
