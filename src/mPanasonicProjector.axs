@@ -7,7 +7,7 @@ MODULE_NAME='mPanasonicProjector'   (
 (***********************************************************)
 #include 'NAVFoundation.ModuleBase.axi'
 #include 'NAVFoundation.SocketUtils.axi'
-#include 'md5.axi'
+#include 'NAVFoundation.Cryptography.Md5.axi'
 
 /*
  _   _                       _          ___     __
@@ -214,7 +214,7 @@ define_function SendString(char cParam[]) {
     cPayload = "COMM_MODE_HEADER[iCommMode], 'AD', cID, ';', cParam, COMM_MODE_DELIMITER[iCommMode]"
 
     if (iSecureCommandRequired && CommModeIsIP(iCommMode)) {
-        cPayload = "Encrypt(cMD5StringToEncode), cPayload"
+        cPayload = "NAVMd5GetHash(cMD5StringToEncode), cPayload"
     }
 
     SendStringRaw(cPayload)
