@@ -132,57 +132,57 @@ DEFINE_VARIABLE
 volatile _NAVProjector uProj
 volatile _NAVModule uModule
 
-volatile long ltIPClientCheck[] = { 3000 }
+volatile long iPClientCheck[] = { 3000 }
 
-volatile integer iLoop
-volatile integer iPollSequence = GET_MODEL
-volatile integer iPollSequenceEnabled[9]    = { true, true, true, true, true, true, true, true, true }
+volatile integer loop
+volatile integer pollSequence = GET_MODEL
+volatile integer pollSequenceEnabled[9]    = { true, true, true, true, true, true, true, true, true }
 
-volatile integer iRequiredPower
-volatile integer iRequiredInput
-volatile integer iRequiredShutter
-volatile integer iRequiredAspect
-volatile integer iActualAspect
-volatile integer irequiredFreeze
-volatile integer iActualFreeze
-volatile sinteger siRequiredVolume
-volatile sinteger siActualVolume
+volatile integer requiredPower
+volatile integer requiredInput
+volatile integer requiredShutter
+volatile integer requiredAspect
+volatile integer actualAspect
+volatile integer requiredFreeze
+volatile integer actualFreeze
+volatile sinteger requiredVolume
+volatile sinteger actualVolume
 
-volatile integer iInputInitialized
-volatile integer iShutterInitialized
-volatile integer iFreezeInitialized
-volatile integer iAspectInitialized
-volatile integer iVolumeInitialized
+volatile integer inputInitialized
+volatile integer shutterInitialized
+volatile integer freezeInitialized
+volatile integer aspectInitialized
+volatile integer volumeInitialized
 
-volatile integer iLamp1QueryCommand
+volatile integer lamp1QueryCommand
 
-volatile long ltDrive[] = { 200 }
+volatile long driveTick[] = { 200 }
 
-volatile integer iSemaphore
-volatile char cRxBuffer[NAV_MAX_BUFFER]
+volatile integer semaphore
+volatile char rxBuffer[NAV_MAX_BUFFER]
 
-volatile integer iPowerBusy
+volatile integer powerBusy
 
-volatile integer iCommandBusy
-volatile integer iCommandLockOut
+volatile integer commandBusy
+volatile integer commandLockOut
 
-volatile char cID[2] = 'ZZ'
+volatile char id[2] = 'ZZ'
 
-volatile char cBaudRate[NAV_MAX_CHARS]    = '9600'
+volatile char baudRate[NAV_MAX_CHARS]    = '9600'
 
-volatile integer iAutoImageRequired
+volatile integer autoImageRequired
 
 volatile _NAVSocketConnection uIPConnection
 
-volatile integer iCommMode = COMM_MODE_SERIAL
+volatile integer commMode = COMM_MODE_SERIAL
 
-volatile integer iSecureCommandRequired
-volatile integer iConnectionStarted
-volatile char cMD5RandomNumber[255]
-volatile char cMD5StringToEncode[255]
+volatile integer secureCommandRequired
+volatile integer connectionStarted
+volatile char md5Seed[255]
+volatile char md5Message[255]
 
-volatile char cUserName[NAV_MAX_CHARS] = 'admin1'
-volatile char cPassword[NAV_MAX_CHARS] = 'password'
+volatile char username[NAV_MAX_CHARS] = 'admin1'
+volatile char password[NAV_MAX_CHARS] = 'password'
 
 (***********************************************************)
 (*               LATCHING DEFINITIONS GO BELOW             *)
@@ -199,32 +199,32 @@ DEFINE_MUTUALLY_EXCLUSIVE
 (***********************************************************)
 (* EXAMPLE: DEFINE_FUNCTION <RETURN_TYPE> <NAME> (<PARAMETERS>) *)
 (* EXAMPLE: DEFINE_CALL '<NAME>' (<PARAMETERS>) *)
-define_function SendStringRaw(char cPayload[]) {
-    NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'String To ', NAVConvertDPSToAscii(dvPort), '-[', cPayload, ']'")
-    send_string dvPort, "cPayload"
+define_function SendStringRaw(char payload[]) {
+    NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'String To ', NAVConvertDPSToAscii(dvPort), '-[', payload, ']'")
+    send_string dvPort, "payload"
 }
 
 
-define_function SendString(char cParam[]) {
-    char cPayload[NAV_MAX_BUFFER]
+define_function SendString(char param[]) {
+    char payload[NAV_MAX_BUFFER]
 
-    cPayload = "COMM_MODE_HEADER[iCommMode], 'AD', cID, ';', cParam, COMM_MODE_DELIMITER[iCommMode]"
+    payload = "COMM_MODE_HEADER[commMode], 'AD', id, ';', param, COMM_MODE_DELIMITER[commMode]"
 
-    if (iSecureCommandRequired && CommModeIsIP(iCommMode)) {
-        cPayload = "NAVMd5GetHash(cMD5StringToEncode), cPayload"
+    if (secureCommandRequired && CommModeIsIP(commMode)) {
+        payload = "NAVMd5GetHash(md5Message), payload"
     }
 
-    SendStringRaw(cPayload)
+    SendStringRaw(payload)
 }
 
 
-define_function SendQuery(integer iParam) {
-    if (iPollSequenceEnabled[iParam]) {
-        switch (iParam) {
+define_function SendQuery(integer param) {
+    if (pollSequenceEnabled[param]) {
+        switch (param) {
             case GET_MODEL: SendString("'QID'")
             case GET_POWER: SendString("'Q$S'")
             case GET_INPUT: SendString("'QIN'")
-            case GET_LAMP1: SendString(LAMP_1_QUERY_COMMANDS[iLamp1QueryCommand])
+            case GET_LAMP1: SendString(LAMP_1_QUERY_COMMANDS[lamp1QueryCommand])
             case GET_LAMP2: SendString("'Q$L:2'")
             case GET_SHUTT: SendString("'QSH'")
             case GET_ASPECT: { SendString('QSE') }            //Get Aspect
@@ -240,7 +240,7 @@ define_function TimeOut() {
     wait 300 'CommsTimeOut' {
         [vdvObject, DEVICE_COMMUNICATING] = false
 
-        if (iCommMode == COMM_MODE_IP_DIRECT) {
+        if (commMode == COMM_MODE_IP_DIRECT) {
             //uIPConnection.IsConnected = false
             NAVClientSocketClose(dvPort.PORT)
         }
@@ -248,20 +248,20 @@ define_function TimeOut() {
 }
 
 
-define_function SetPower(integer iParam) {
-    switch (iParam) {
+define_function SetPower(integer param) {
+    switch (param) {
         case REQUIRED_POWER_ON: { SendString("'PON'") }
         case REQUIRED_POWER_OFF: { SendString("'POF'") }
     }
 }
 
 
-define_function SetInput(integer iParam) { SendString("'IIS:', INPUT_COMMANDS[iParam]") }
+define_function SetInput(integer param) { SendString("'IIS:', INPUT_COMMANDS[param]") }
 
-define_function SetVolume(sinteger siParam) { SendString("'AVL:', itoa(siParam)") }
+define_function SetVolume(sinteger param) { SendString("'AVL:', itoa(param)") }
 
-define_function SetShutter(integer iParam) {
-    switch (iRequiredShutter) {
+define_function SetShutter(integer param) {
+    switch (requiredShutter) {
         case REQUIRED_SHUTTER_OPEN: { SendString("'OSH:0'") }
         case REQUIRED_SHUTTER_CLOSED: { SendString("'OSH:1'") }
     }
@@ -269,157 +269,157 @@ define_function SetShutter(integer iParam) {
 
 
 define_function Process() {
-    stack_var char cTemp[NAV_MAX_BUFFER]
+    stack_var char buffer[NAV_MAX_BUFFER]
 
-    if (iSemaphore) {
+    if (semaphore) {
         return
     }
 
-    iSemaphore = true
+    semaphore = true
 
-    while (length_array(cRxBuffer) && NAVContains(cRxBuffer, COMM_MODE_DELIMITER[iCommMode])) {
-        cTemp = remove_string(cRxBuffer, COMM_MODE_DELIMITER[iCommMode], 1)
+    while (length_array(rxBuffer) && NAVContains(rxBuffer, COMM_MODE_DELIMITER[commMode])) {
+        buffer = remove_string(rxBuffer, COMM_MODE_DELIMITER[commMode], 1)
 
-        if (!length_array(cTemp)) {
+        if (!length_array(buffer)) {
             continue
         }
 
-        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'Parsing String From ', NAVConvertDPSToAscii(dvPort), '-[', cTemp, ']'")
+        NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'Parsing String From ', NAVConvertDPSToAscii(dvPort), '-[', buffer, ']'")
 
-        cTemp = NAVStripCharsFromRight(cTemp, 1)    //Remove delimiter
+        buffer = NAVStripCharsFromRight(buffer, 1)    //Remove delimiter
 
         select {
-            active (NAVStartsWith(cTemp, 'NTCONTROL')): {
+            active (NAVStartsWith(buffer, 'NTCONTROL')): {
                 //Connection Started
-                cTemp = NAVStripCharsFromLeft(cTemp, 10);
+                buffer = NAVStripCharsFromLeft(buffer, 10);
 
-                iSecureCommandRequired = atoi(remove_string(cTemp, ' ', 1));
+                secureCommandRequired = atoi(remove_string(buffer, ' ', 1));
 
-                if (iSecureCommandRequired) {
-                    cMD5RandomNumber = cTemp;
+                if (secureCommandRequired) {
+                    md5Seed = buffer;
                     //if (len(password) > 0 && len(user_name) > 0) {
-                        cMD5StringToEncode = "cUserName, ':', cPassword, ':', cMD5RandomNumber"
+                        md5Message = "username, ':', password, ':', md5Seed"
                     //}//else {
                         //sMD5StringToEncode = DEFAULT_USER_NAME + ":" + DEFAULT_PASSWORD + ":" + sMD5RandomNumber;
                     //}
                 }
 
-                iConnectionStarted = 1;
-                iLoop = 0;
+                connectionStarted = 1;
+                loop = 0;
                 Drive();
             }
-            active (NAVStartsWith(cTemp, COMM_MODE_HEADER[iCommMode])): {
-                remove_string(cTemp, COMM_MODE_HEADER[iCommMode], 1)
+            active (NAVStartsWith(buffer, COMM_MODE_HEADER[commMode])): {
+                remove_string(buffer, COMM_MODE_HEADER[commMode], 1)
 
-                if (NAVStartsWith(cTemp, 'ER')) {
-                    iPollSequence = GET_MODEL
+                if (NAVStartsWith(buffer, 'ER')) {
+                    pollSequence = GET_MODEL
                     continue
                 }
 
-                switch (iPollSequence) {
+                switch (pollSequence) {
                     case GET_POWER: {
-                        switch (cTemp) {
-                            case '0': { uProj.Display.PowerState.Actual = ACTUAL_POWER_OFF; if (iPollSequenceEnabled[GET_LAMP1]) iPollSequence = GET_LAMP1; }
-                            case '1': { uProj.Display.PowerState.Actual = ACTUAL_WARMING; if (iPollSequenceEnabled[GET_LAMP1]) iPollSequence = GET_LAMP1; }
+                        switch (buffer) {
+                            case '0': { uProj.Display.PowerState.Actual = ACTUAL_POWER_OFF; if (pollSequenceEnabled[GET_LAMP1]) pollSequence = GET_LAMP1; }
+                            case '1': { uProj.Display.PowerState.Actual = ACTUAL_WARMING; if (pollSequenceEnabled[GET_LAMP1]) pollSequence = GET_LAMP1; }
                             case '2': {
                                 uProj.Display.PowerState.Actual = ACTUAL_POWER_ON
 
                                 select {
-                                    active (!iInputInitialized): { iPollSequence = GET_INPUT }
-                                    active (!iShutterInitialized): { iPollSequence = GET_SHUTT }
-                                    //active (!iVolumeInitialized): { iPollSequence = GET_VOLUME }
-                                    //active (!iFreezeInitialized): { iPollSequence = GET_FREEZE }
-                                    //active (!iAspectInitialized): { iPollSequence = GET_ASPECT }
+                                    active (!inputInitialized): { pollSequence = GET_INPUT }
+                                    active (!shutterInitialized): { pollSequence = GET_SHUTT }
+                                    //active (!volumeInitialized): { pollSequence = GET_VOLUME }
+                                    //active (!freezeInitialized): { pollSequence = GET_FREEZE }
+                                    //active (!aspectInitialized): { pollSequence = GET_ASPECT }
                                     active (true): {
-                                        if (iPollSequenceEnabled[GET_LAMP1]) { iPollSequence = GET_LAMP1 }
+                                        if (pollSequenceEnabled[GET_LAMP1]) { pollSequence = GET_LAMP1 }
                                     }
                                 }
                             }
-                            case '3': { uProj.Display.PowerState.Actual = ACTUAL_COOLING; if (iPollSequenceEnabled[GET_LAMP1]) iPollSequence = GET_LAMP1; }
+                            case '3': { uProj.Display.PowerState.Actual = ACTUAL_COOLING; if (pollSequenceEnabled[GET_LAMP1]) pollSequence = GET_LAMP1; }
                         }
                     }
                     case GET_INPUT: {
                         select {
-                            active (NAVContains(cTemp, "'RG1'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_VGA_1; iPollSequence = GET_POWER; iInputInitialized = true }
-                            active (NAVContains(cTemp, "'RG2'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_RGB_1; iPollSequence = GET_POWER; iInputInitialized = true }
-                            active (NAVContains(cTemp, "'VID'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_VIDEO_1; iPollSequence = GET_POWER; iInputInitialized = true }
-                            active (NAVContains(cTemp, "'SVD'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_SVIDEO_1; iPollSequence = GET_POWER; iInputInitialized = true }
-                            active (NAVContains(cTemp, "'DVI'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_DVI_1; iPollSequence = GET_POWER; iInputInitialized = true }
-                            active (NAVContains(cTemp, "'SDI'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_SDI_1; iPollSequence = GET_POWER; iInputInitialized = true }
-                            active (NAVContains(cTemp, "'HD1'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_HDMI_1; iPollSequence = GET_POWER; iInputInitialized = true }
-                            active (NAVContains(cTemp, "'DL1'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_DIGITAL_LINK_1; iPollSequence = GET_POWER; iInputInitialized = true }
+                            active (NAVContains(buffer, "'RG1'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_VGA_1; pollSequence = GET_POWER; inputInitialized = true }
+                            active (NAVContains(buffer, "'RG2'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_RGB_1; pollSequence = GET_POWER; inputInitialized = true }
+                            active (NAVContains(buffer, "'VID'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_VIDEO_1; pollSequence = GET_POWER; inputInitialized = true }
+                            active (NAVContains(buffer, "'SVD'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_SVIDEO_1; pollSequence = GET_POWER; inputInitialized = true }
+                            active (NAVContains(buffer, "'DVI'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_DVI_1; pollSequence = GET_POWER; inputInitialized = true }
+                            active (NAVContains(buffer, "'SDI'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_SDI_1; pollSequence = GET_POWER; inputInitialized = true }
+                            active (NAVContains(buffer, "'HD1'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_HDMI_1; pollSequence = GET_POWER; inputInitialized = true }
+                            active (NAVContains(buffer, "'DL1'")): { uProj.Display.Input.Actual = ACTUAL_INPUT_DIGITAL_LINK_1; pollSequence = GET_POWER; inputInitialized = true }
                         }
                     }
                     case GET_LAMP1: {
-                        if (length_array(cTemp) == 4) {
-                            stack_var integer iTemp
+                        if (length_array(buffer) == 4) {
+                            stack_var integer temp
 
-                            iTemp = atoi(cTemp)
+                            temp = atoi(buffer)
 
-                            if (iTemp != uProj.LampHours[1].Actual) {
-                                uProj.LampHours[1].Actual = iTemp
+                            if (temp != uProj.LampHours[1].Actual) {
+                                uProj.LampHours[1].Actual = temp
                                 send_string vdvObject, "'LAMPTIME-', itoa(uProj.LampHours[1].Actual)"
                             }
 
-                            if (iPollSequenceEnabled[GET_LAMP2]) {
-                                iPollSequence = GET_LAMP2;
+                            if (pollSequenceEnabled[GET_LAMP2]) {
+                                pollSequence = GET_LAMP2;
                             }
                             else {
-                                iPollSequence = GET_POWER;
+                                pollSequence = GET_POWER;
                             }
                         }
                     }
                     case GET_LAMP2: {
-                        if (length_array(cTemp) == 4) {
-                            stack_var integer iTemp
+                        if (length_array(buffer) == 4) {
+                            stack_var integer temp
 
-                            iTemp = atoi(cTemp)
+                            temp = atoi(buffer)
 
-                            if (iTemp != uProj.LampHours[2].Actual) {
-                                uProj.LampHours[2].Actual = iTemp
+                            if (temp != uProj.LampHours[2].Actual) {
+                                uProj.LampHours[2].Actual = temp
                                 send_string vdvObject, "'LAMPTIME-', itoa(uProj.LampHours[2].Actual)"
                             }
 
-                            iPollSequence = GET_POWER
+                            pollSequence = GET_POWER
                         }
                     }
                     case GET_SHUTT: {
-                        switch (cTemp) {
-                            case '0': { uProj.Display.VideoMute.Actual = ACTUAL_SHUTTER_OPEN; iPollSequence = GET_POWER; iShutterInitialized = true }
-                            case '1': { uProj.Display.VideoMute.Actual = ACTUAL_SHUTTER_CLOSED; iPollSequence = GET_POWER; iShutterInitialized = true }
+                        switch (buffer) {
+                            case '0': { uProj.Display.VideoMute.Actual = ACTUAL_SHUTTER_OPEN; pollSequence = GET_POWER; shutterInitialized = true }
+                            case '1': { uProj.Display.VideoMute.Actual = ACTUAL_SHUTTER_CLOSED; pollSequence = GET_POWER; shutterInitialized = true }
                         }
                     }
                     case GET_FREEZE: {
-                        switch (cTemp) {
-                            case '0': { iActualFreeze = ACTUAL_FREEZE_OFF; iPollSequence = GET_POWER; iFreezeInitialized = true }
-                            case '1': { iActualFreeze = ACTUAL_FREEZE_ON; iPollSequence = GET_POWER; iFreezeInitialized = true }
+                        switch (buffer) {
+                            case '0': { actualFreeze = ACTUAL_FREEZE_OFF; pollSequence = GET_POWER; freezeInitialized = true }
+                            case '1': { actualFreeze = ACTUAL_FREEZE_ON; pollSequence = GET_POWER; freezeInitialized = true }
                         }
                     }
                     case GET_ASPECT: {
-                        switch (atoi(cTemp)) {
-                            case 0: { iActualAspect = 1; iPollSequence = GET_POWER; iAspectInitialized = true }
-                            case 5: { iActualAspect = 2; iPollSequence = GET_POWER; iAspectInitialized = true}
-                            case 2: { iActualAspect = 3; iPollSequence = GET_POWER; iAspectInitialized = true}
-                            case 1: { iActualAspect = 4; iPollSequence = GET_POWER; iAspectInitialized = true}
-                            case 10: { iActualAspect = 6; iPollSequence = GET_POWER; iAspectInitialized = true}
-                            case 9: { iActualAspect = 5; iPollSequence = GET_POWER; iAspectInitialized = true}
-                            case 6: { iActualAspect = 7; iPollSequence = GET_POWER; iAspectInitialized = true }
+                        switch (atoi(buffer)) {
+                            case 0: { actualAspect = 1; pollSequence = GET_POWER; aspectInitialized = true }
+                            case 5: { actualAspect = 2; pollSequence = GET_POWER; aspectInitialized = true}
+                            case 2: { actualAspect = 3; pollSequence = GET_POWER; aspectInitialized = true}
+                            case 1: { actualAspect = 4; pollSequence = GET_POWER; aspectInitialized = true}
+                            case 10: { actualAspect = 6; pollSequence = GET_POWER; aspectInitialized = true}
+                            case 9: { actualAspect = 5; pollSequence = GET_POWER; aspectInitialized = true}
+                            case 6: { actualAspect = 7; pollSequence = GET_POWER; aspectInitialized = true }
                         }
                     }
                     case GET_VOLUME: {
-                        siActualVolume = atoi(cTemp)
-                        send_level vdvObject, 1, siActualVolume * 255 / 63
-                        iVolumeInitialized = true
-                        iPollSequence = GET_POWER
+                        actualVolume = atoi(buffer)
+                        send_level vdvObject, 1, actualVolume * 255 / 63
+                        volumeInitialized = true
+                        pollSequence = GET_POWER
                     }
                     case GET_MODEL: {    //Model
                         select {
-                            active (NAVContains(cTemp, 'RZ') > 0): { iPollSequenceEnabled[GET_LAMP1] = 0; iPollSequenceEnabled[GET_LAMP2] = 0; iPollSequence = GET_POWER; }
-                            active (NAVContains(cTemp, 'MZ') > 0): { iPollSequenceEnabled[GET_LAMP1] = 0; iPollSequenceEnabled[GET_LAMP2] = 0; iPollSequence = GET_POWER; }
-                            active (NAVContains(cTemp, 'RW') > 0): { iPollSequenceEnabled[GET_LAMP1] = 0; iPollSequenceEnabled[GET_LAMP2] = 0; iPollSequence = GET_POWER; }
-                            active (NAVContains(cTemp, 'FRQ') > 0): { iPollSequenceEnabled[GET_LAMP1] = 0; iPollSequenceEnabled[GET_LAMP2] = 0; iPollSequence = GET_POWER; }
-                            active (NAVContains(cTemp, 'FW') > 0): { iLamp1QueryCommand = 1; iPollSequenceEnabled[GET_LAMP2] = 0; iPollSequence = GET_POWER; }
-                            active (NAVContains(cTemp, 'DX') > 0): { iLamp1QueryCommand = 1; iPollSequenceEnabled[GET_LAMP2] = 0; iPollSequence = GET_POWER; }
+                            active (NAVContains(buffer, 'RZ') > 0): { pollSequenceEnabled[GET_LAMP1] = 0; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
+                            active (NAVContains(buffer, 'MZ') > 0): { pollSequenceEnabled[GET_LAMP1] = 0; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
+                            active (NAVContains(buffer, 'RW') > 0): { pollSequenceEnabled[GET_LAMP1] = 0; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
+                            active (NAVContains(buffer, 'FRQ') > 0): { pollSequenceEnabled[GET_LAMP1] = 0; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
+                            active (NAVContains(buffer, 'FW') > 0): { lamp1QueryCommand = 1; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
+                            active (NAVContains(buffer, 'DX') > 0): { lamp1QueryCommand = 1; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
                         }
                     }
                 }
@@ -427,82 +427,82 @@ define_function Process() {
         }
     }
 
-    iSemaphore = false
+    semaphore = false
 }
 
 
-define_function integer CommModeIsIP(integer iCommMode) {
-    return iCommMode == COMM_MODE_IP_DIRECT || iCommMode == COMM_MODE_IP_INDIRECT
+define_function integer CommModeIsIP(integer mode) {
+    return mode == COMM_MODE_IP_DIRECT || mode == COMM_MODE_IP_INDIRECT
 }
 
 
 define_function Drive() {
-    if (!iConnectionStarted && CommModeIsIP(iCommMode)) {
+    if (!connectionStarted && CommModeIsIP(commMode)) {
         return;
     }
 
-    if (iSecureCommandRequired && !length_array(cMD5StringToEncode) && CommModeIsIP(iCommMode)) {
+    if (secureCommandRequired && !length_array(md5Message) && CommModeIsIP(commMode)) {
         return;
     }
 
-    if (!uIPConnection.IsConnected && CommModeIsIP(iCommMode)) {
+    if (!uIPConnection.IsConnected && CommModeIsIP(commMode)) {
         return;
     }
 
-    iLoop++
+    loop++
 
-    switch (iLoop) {
+    switch (loop) {
         case 1:
         case 6:
         case 11:
-        case 16: { SendQuery(iPollSequence); return }
-        case 21: { iLoop = 1; return }
+        case 16: { SendQuery(pollSequence); return }
+        case 21: { loop = 1; return }
         default: {
-            if (iCommandLockOut) { return }
-            if (iRequiredPower && (iRequiredPower == uProj.Display.PowerState.Actual)) { iRequiredPower = 0; return }
-            if (iRequiredInput && (iRequiredInput == uProj.Display.Input.Actual)) { iRequiredInput = 0; return }
-            if (iRequiredShutter && (iRequiredShutter == uProj.Display.VideoMute.Actual)) { iRequiredShutter = 0; return }
-            if (iRequiredAspect && (iRequiredAspect == iActualAspect)) { iRequiredAspect = 0; return }
-            if (iRequiredFreeze && (iRequiredFreeze == iActualFreeze)) { iRequiredFreeze = 0; return }
+            if (commandLockOut) { return }
+            if (requiredPower && (requiredPower == uProj.Display.PowerState.Actual)) { requiredPower = 0; return }
+            if (requiredInput && (requiredInput == uProj.Display.Input.Actual)) { requiredInput = 0; return }
+            if (requiredShutter && (requiredShutter == uProj.Display.VideoMute.Actual)) { requiredShutter = 0; return }
+            if (requiredAspect && (requiredAspect == actualAspect)) { requiredAspect = 0; return }
+            if (requiredFreeze && (requiredFreeze == actualFreeze)) { requiredFreeze = 0; return }
 
-            if (iRequiredPower && (iRequiredPower != uProj.Display.PowerState.Actual) && (uProj.Display.PowerState.Actual != ACTUAL_WARMING) && (uProj.Display.PowerState.Actual != ACTUAL_COOLING) && [vdvObject, DEVICE_COMMUNICATING]) {
-                iCommandBusy = true
-                SetPower(iRequiredPower)
-                iCommandLockOut = true
-                wait 50 iCommandLockOut = false
-                iPollSequence = GET_POWER
+            if (requiredPower && (requiredPower != uProj.Display.PowerState.Actual) && (uProj.Display.PowerState.Actual != ACTUAL_WARMING) && (uProj.Display.PowerState.Actual != ACTUAL_COOLING)) {
+                commandBusy = true
+                SetPower(requiredPower)
+                commandLockOut = true
+                wait 50 commandLockOut = false
+                pollSequence = GET_POWER
                 return
             }
 
-            if (iRequiredInput && (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) && (iRequiredInput != uProj.Display.Input.Actual) && [vdvObject, DEVICE_COMMUNICATING]) {
-                iCommandBusy = true
-                SetInput(iRequiredInput)
-                iCommandLockOut = true
-                wait 20 iCommandLockOut = false
-                iPollSequence = GET_INPUT
+            if (requiredInput && (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) && (requiredInput != uProj.Display.Input.Actual)) {
+                commandBusy = true
+                SetInput(requiredInput)
+                commandLockOut = true
+                wait 20 commandLockOut = false
+                pollSequence = GET_INPUT
                 return
             }
 
-            if (iRequiredShutter && (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) && (iRequiredShutter != uProj.Display.VideoMute.Actual) && [vdvObject, DEVICE_COMMUNICATING]) {
-                iCommandBusy = true
-                SetShutter(iRequiredShutter)
-                iCommandLockOut = true
-                wait 10 iCommandLockOut = false
-                iPollSequence = GET_SHUTT
+            if (requiredShutter && (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) && (requiredShutter != uProj.Display.VideoMute.Actual)) {
+                commandBusy = true
+                SetShutter(requiredShutter)
+                commandLockOut = true
+                wait 10 commandLockOut = false
+                pollSequence = GET_SHUTT
                 return
             }
 
-            if (iRequiredFreeze && (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) && (iRequiredFreeze != iActualFreeze) && [vdvObject, DEVICE_COMMUNICATING]) {
-                iCommandBusy = true
-                //SetShutter(iRequiredShutter)
-                iCommandLockOut = true
-                wait 10 iCommandLockOut = false
-                iPollSequence = GET_FREEZE
+            if (requiredFreeze && (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) && (requiredFreeze != actualFreeze)) {
+                commandBusy = true
+                //SetShutter(requiredShutter)
+                commandLockOut = true
+                wait 10 commandLockOut = false
+                pollSequence = GET_FREEZE
                 return
             }
 
-            if (iRequiredAspect && (uProj.Display.PowerState.Required == ACTUAL_POWER_ON) && (iRequiredAspect != iActualAspect) && [vdvObject, DEVICE_COMMUNICATING]) {
-                switch (iRequiredAspect) {
+            if (requiredAspect && (uProj.Display.PowerState.Required == ACTUAL_POWER_ON) && (requiredAspect != actualAspect)) {
+                switch (requiredAspect) {
                     case 1: { SendString('VSE:0') }    //Normal
                     case 2: { SendString('VSE:5') }    //Native
                     case 3: { SendString('VSE:2') }    //Wide
@@ -512,25 +512,25 @@ define_function Drive() {
                     case 7: { SendString('VSE:6') }    //Full
                 }
 
-                iCommandLockOut = true
-                wait 10 iCommandLockOut = false
-                iPollSequence = GET_ASPECT;
+                commandLockOut = true
+                wait 10 commandLockOut = false
+                pollSequence = GET_ASPECT;
                 return;
             }
 
-            if (iAutoImageRequired && (uProj.Display.PowerState.Required == ACTUAL_POWER_ON) && [vdvObject, DEVICE_COMMUNICATING]) {
-                SendString('OAS'); iCommandLockout = true; wait 10 iCommandLockOut = false;    //Auto Image
-                iAutoImageRequired = false
+            if (autoImageRequired && (uProj.Display.PowerState.Required == ACTUAL_POWER_ON)) {
+                SendString('OAS'); commandLockout = true; wait 10 commandLockOut = false;    //Auto Image
+                autoImageRequired = false
             }
 
-            if ([vdvObject, MENU_FUNC]) { SendString('OMN') iCommandLockOut = true; wait 5 iCommandLockOut = false }
-            if ([vdvObject, MENU_UP]) { SendString('OCU') iCommandLockOut = true; wait 5 iCommandLockOut = false }
-            if ([vdvObject, MENU_DN]) { SendString('OCD') iCommandLockOut = true; wait 5 iCommandLockOut = false }
-            if ([vdvObject, MENU_LT]) { SendString('OCL') iCommandLockOut = true; wait 5 iCommandLockOut = false }
-            if ([vdvObject, MENU_RT]) { SendString('OCR') iCommandLockOut = true; wait 5 iCommandLockOut = false }
-            if ([vdvObject, MENU_SELECT]) { SendString('OEN') iCommandLockOut = true; wait 5 iCommandLockOut = false }
-            if ([vdvObject, MENU_CANCEL]) { SendString('OBK') iCommandLockOut = true; wait 5 iCommandLockOut = false }
-            if ([vdvObject, MENU_DISPLAY]) { SendString('OOS') iCommandLockOut = true; wait 5 iCommandLockOut = false }
+            if ([vdvObject, MENU_FUNC]) { SendString('OMN') commandLockOut = true; wait 5 commandLockOut = false }
+            if ([vdvObject, MENU_UP]) { SendString('OCU') commandLockOut = true; wait 5 commandLockOut = false }
+            if ([vdvObject, MENU_DN]) { SendString('OCD') commandLockOut = true; wait 5 commandLockOut = false }
+            if ([vdvObject, MENU_LT]) { SendString('OCL') commandLockOut = true; wait 5 commandLockOut = false }
+            if ([vdvObject, MENU_RT]) { SendString('OCR') commandLockOut = true; wait 5 commandLockOut = false }
+            if ([vdvObject, MENU_SELECT]) { SendString('OEN') commandLockOut = true; wait 5 commandLockOut = false }
+            if ([vdvObject, MENU_CANCEL]) { SendString('OBK') commandLockOut = true; wait 5 commandLockOut = false }
+            if ([vdvObject, MENU_DISPLAY]) { SendString('OOS') commandLockOut = true; wait 5 commandLockOut = false }
         }
     }
 }
@@ -549,7 +549,7 @@ define_function MaintainIPConnection() {
 (*                STARTUP CODE GOES BELOW                  *)
 (***********************************************************)
 DEFINE_START {
-    create_buffer dvPort, cRxBuffer
+    create_buffer dvPort, rxBuffer
 
     uIPConnection.Port = DEFAULT_TCP_PORT
 }
@@ -562,7 +562,7 @@ DEFINE_EVENT
 data_event[dvPort] {
     online: {
         if (data.device.number != 0) {
-            NAVCommand(data.device, "'SET BAUD ', cBaudRate, ', N, 8, 1 485 DISABLE'")
+            NAVCommand(data.device, "'SET BAUD ', baudRate, ', N, 8, 1 485 DISABLE'")
             NAVCommand(data.device, "'B9MOFF'")
             NAVCommand(data.device, "'CHARD-0'")
             NAVCommand(data.device, "'CHARDM-0'")
@@ -571,10 +571,10 @@ data_event[dvPort] {
 
         if (data.device.number == 0) {
             uIPConnection.IsConnected = true
-            // iCommMode = COMM_MODE_IP_DIRECT
+            // commMode = COMM_MODE_IP_DIRECT
         }
 
-        NAVTimelineStart(TL_DRIVE, ltDrive, timeline_absolute, timeline_repeat)
+        NAVTimelineStart(TL_DRIVE, driveTick, TIMELINE_ABSOLUTE, TIMELINE_REPEAT)
     }
     string: {
         [vdvObject, DEVICE_COMMUNICATING] = true
@@ -584,14 +584,14 @@ data_event[dvPort] {
 
         NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'String From ', NAVConvertDPSToAscii(data.device), '-[', data.text, ']'")
 
-        if (!iSemaphore) { Process() }
+        if (!semaphore) { Process() }
     }
     offline: {
         if (data.device.number == 0) {
             uIPConnection.IsConnected = false
             NAVClientSocketClose(data.device.port)
 
-            // iCommMode = COMM_MODE_SERIAL
+            // commMode = COMM_MODE_SERIAL
 
             // NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'PANASONIC_PROJECTOR_IP_OFFLINE<', NAVStringSurroundWith(NAVDeviceToString(dvPortIP), '[', ']'), '>'")
         }
@@ -601,7 +601,7 @@ data_event[dvPort] {
             uIPConnection.IsConnected = false
             //NAVClientSocketClose(data.device.port)
 
-            // iCommMode = COMM_MODE_SERIAL
+            // commMode = COMM_MODE_SERIAL
 
             // NAVErrorLog(NAV_LOG_LEVEL_DEBUG, "'PANASONIC_PROJECTOR_IP_ONERROR<', NAVStringSurroundWith(NAVDeviceToString(dvPortIP), '[', ']'), '>'")
         }
@@ -611,154 +611,154 @@ data_event[dvPort] {
 
 data_event[vdvObject] {
     online: {
-        NAVCommand(data.device, "'PROPERTY-RMS_MONITOR_ASSET_PROPERTY,MONITOR_ASSET_DESCRIPTION,Video Projector'")
-        NAVCommand(data.device, "'PROPERTY-RMS_MONITOR_ASSET_PROPERTY,MONITOR_ASSET_MANUFACTURER_URL,www.panasonic.com'")
-        NAVCommand(data.device, "'PROPERTY-RMS_MONITOR_ASSET_PROPERTY,MONITOR_ASSET_MANUFACTURER_NAME,PANASONIC'")
+        NAVCommand(data.device, "'PROPERTY-RMS_MONITOR_ASSET_PROPERTY, MONITOR_ASSET_DESCRIPTION, Video Projector'")
+        NAVCommand(data.device, "'PROPERTY-RMS_MONITOR_ASSET_PROPERTY, MONITOR_ASSET_MANUFACTURER_URL, www.panasonic.com'")
+        NAVCommand(data.device, "'PROPERTY-RMS_MONITOR_ASSET_PROPERTY, MONITOR_ASSET_MANUFACTURER_NAME, PANASONIC'")
     }
     command: {
-        stack_var char cCmdHeader[NAV_MAX_CHARS]
-        stack_var char cCmdParam[2][NAV_MAX_CHARS]
+        stack_var char cmdHeader[NAV_MAX_CHARS]
+        stack_var char cmdParam[2][NAV_MAX_CHARS]
 
         NAVErrorLog(NAV_LOG_LEVEL_DEBUG, NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_COMMAND_FROM, data.device, data.text))
 
-        cCmdHeader = DuetParseCmdHeader(data.text)
-        cCmdParam[1] = DuetParseCmdParam(data.text)
-        cCmdParam[2] = DuetParseCmdParam(data.text)
+        cmdHeader = DuetParseCmdHeader(data.text)
+        cmdParam[1] = DuetParseCmdParam(data.text)
+        cmdParam[2] = DuetParseCmdParam(data.text)
 
-        switch (cCmdHeader) {
+        switch (cmdHeader) {
             case 'PROPERTY': {
-                switch (cCmdParam[1]) {
+                switch (cmdParam[1]) {
                     case 'IP_ADDRESS': {
-                        uIPConnection.Address = cCmdParam[2]
-                        NAVTimelineStart(TL_IP_CLIENT_CHECK, ltIPClientCheck, TIMELINE_ABSOLUTE, TIMELINE_REPEAT)
+                        uIPConnection.Address = cmdParam[2]
+                        NAVTimelineStart(TL_IP_CLIENT_CHECK, iPClientCheck, TIMELINE_ABSOLUTE, TIMELINE_REPEAT)
                     }
                     case 'IP_PORT': {
-                        uIPConnection.Port = atoi(cCmdParam[2])
+                        uIPConnection.Port = atoi(cmdParam[2])
                     }
                     case 'COMM_MODE': {
-                        switch (cCmdParam[2]) {
+                        switch (cmdParam[2]) {
                             case 'SERIAL': {
-                                iCommMode = COMM_MODE_SERIAL
+                                commMode = COMM_MODE_SERIAL
                             }
                             case 'IP_DIRECT': {
-                                iCommMode = COMM_MODE_IP_DIRECT
+                                commMode = COMM_MODE_IP_DIRECT
                             }
                             case 'IP_INDIRECT': {
-                                iCommMode = COMM_MODE_IP_INDIRECT
+                                commMode = COMM_MODE_IP_INDIRECT
                             }
                         }
                     }
                     case 'ID': {
-                        cID = format('%02d', atoi(cCmdParam[2]))
+                        id = format('%02d', atoi(cmdParam[2]))
                     }
                     case 'BAUD_RATE': {
-                        cBaudRate = cCmdParam[2]
+                        baudRate = cmdParam[2]
 
-                        if ((iCommMode == COMM_MODE_SERIAL) && device_id(dvPort)) {
-                            send_command dvPort, "'SET BAUD ', cBaudRate, ', N, 8, 1 485 DISABLE'"
+                        if ((commMode == COMM_MODE_SERIAL) && device_id(dvPort)) {
+                            send_command dvPort, "'SET BAUD ', baudRate, ', N, 8, 1 485 DISABLE'"
                         }
                     }
                     case 'USER_NAME': {
-                        cUserName = cCmdParam[2]
+                        username = cmdParam[2]
 
-                        if (length_array(cMD5RandomNumber)) {
-                            cMD5StringToEncode = "cUserName, ':', cPassword, ':', cMD5RandomNumber"
+                        if (length_array(md5Seed)) {
+                            md5Message = "username, ':', password, ':', md5Seed"
                         }
                     }
                     case 'PASSWORD': {
-                        cPassword = cCmdParam[2]
+                        password = cmdParam[2]
 
-                        if (length_array(cMD5RandomNumber)) {
-                            cMD5StringToEncode = "cUserName, ':', cPassword, ':', cMD5RandomNumber"
+                        if (length_array(md5Seed)) {
+                            md5Message = "username, ':', password, ':', md5Seed"
                         }
                     }
                 }
             }
-            case 'PASSTHRU': { SendString(cCmdParam[1]) }
+            case 'PASSTHRU': { SendString(cmdParam[1]) }
             case 'POWER': {
-                switch (cCmdParam[1]) {
-                    case 'ON': { iRequiredPower = REQUIRED_POWER_ON; Drive() }
-                    case 'OFF': { iRequiredPower = REQUIRED_POWER_OFF; iRequiredInput = 0; Drive() }
+                switch (cmdParam[1]) {
+                    case 'ON': { requiredPower = REQUIRED_POWER_ON; Drive() }
+                    case 'OFF': { requiredPower = REQUIRED_POWER_OFF; requiredInput = 0; Drive() }
                 }
             }
             case 'MUTE': {
                 if (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    switch (cCmdParam[1]) {
-                        case 'ON': { iRequiredShutter = REQUIRED_SHUTTER_CLOSED; Drive() }
-                        case 'OFF': { iRequiredShutter = REQUIRED_SHUTTER_OPEN; Drive() }
+                    switch (cmdParam[1]) {
+                        case 'ON': { requiredShutter = REQUIRED_SHUTTER_CLOSED; Drive() }
+                        case 'OFF': { requiredShutter = REQUIRED_SHUTTER_OPEN; Drive() }
                     }
                 }
             }
             case 'ADJUST': {
                 if (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    iAutoImageRequired = true
+                    autoImageRequired = true
                 }
             }
             case 'ASPECT': {
                 if (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    switch (cCmdParam[1]) {
-                        case 'NORMAL': { iRequiredAspect = 1; Drive() }
-                        case 'NATIVE': { iRequiredAspect = 2; Drive() }
-                        case 'WIDE': { iRequiredAspect = 3; Drive() }
-                        case '4x3': { iRequiredAspect = 4; Drive() }
-                        case 'H_FIT': { iRequiredAspect = 5; Drive() }
-                        case 'V_FIT': { iRequiredAspect = 6; Drive() }
-                        case 'FULL': { iRequiredAspect = 7; Drive() }
+                    switch (cmdParam[1]) {
+                        case 'NORMAL': { requiredAspect = 1; Drive() }
+                        case 'NATIVE': { requiredAspect = 2; Drive() }
+                        case 'WIDE': { requiredAspect = 3; Drive() }
+                        case '4x3': { requiredAspect = 4; Drive() }
+                        case 'H_FIT': { requiredAspect = 5; Drive() }
+                        case 'V_FIT': { requiredAspect = 6; Drive() }
+                        case 'FULL': { requiredAspect = 7; Drive() }
                     }
                 }
             }
             case 'VOLUME': {
-                switch (cCmdParam[1]) {
+                switch (cmdParam[1]) {
                     case 'ABS': {
-                        SetVolume(atoi(cCmdParam[2]))
-                        iPollSequence = GET_VOLUME
+                        SetVolume(atoi(cmdParam[2]))
+                        pollSequence = GET_VOLUME
                     }
                     default: {
-                        SetVolume(atoi(cCmdParam[1]) * 63 / 255)
-                        iPollSequence = GET_VOLUME
+                        SetVolume(atoi(cmdParam[1]) * 63 / 255)
+                        pollSequence = GET_VOLUME
                     }
                 }
             }
             case 'INPUT': {
-                switch (cCmdParam[1]) {
+                switch (cmdParam[1]) {
                     case 'VGA': {
-                        switch (cCmdParam[2]) {
-                            case '1': { iRequiredPower = REQUIRED_POWER_ON; iRequiredInput = REQUIRED_INPUT_VGA_1; Drive() }
+                        switch (cmdParam[2]) {
+                            case '1': { requiredPower = REQUIRED_POWER_ON; requiredInput = REQUIRED_INPUT_VGA_1; Drive() }
                         }
                     }
                     case 'RGB': {
-                        switch (cCmdParam[2]) {
-                            case '1': { iRequiredPower = REQUIRED_POWER_ON; iRequiredInput = REQUIRED_INPUT_RGB_1; Drive() }
+                        switch (cmdParam[2]) {
+                            case '1': { requiredPower = REQUIRED_POWER_ON; requiredInput = REQUIRED_INPUT_RGB_1; Drive() }
                         }
                     }
                     case 'HDMI': {
-                        switch (cCmdParam[2]) {
-                            case '1': { iRequiredPower = REQUIRED_POWER_ON; iRequiredInput = REQUIRED_INPUT_HDMI_1; Drive() }
+                        switch (cmdParam[2]) {
+                            case '1': { requiredPower = REQUIRED_POWER_ON; requiredInput = REQUIRED_INPUT_HDMI_1; Drive() }
                         }
                     }
                     case 'DVI': {
-                        switch (cCmdParam[2]) {
-                            case '1': { iRequiredPower = REQUIRED_POWER_ON; iRequiredInput = REQUIRED_INPUT_DVI_1; Drive() }
+                        switch (cmdParam[2]) {
+                            case '1': { requiredPower = REQUIRED_POWER_ON; requiredInput = REQUIRED_INPUT_DVI_1; Drive() }
                         }
                     }
                     case 'DIGITAL_LINK': {
-                        switch (cCmdParam[2]) {
-                            case '1': { iRequiredPower = REQUIRED_POWER_ON; iRequiredInput = REQUIRED_INPUT_DIGITAL_LINK_1; Drive() }
+                        switch (cmdParam[2]) {
+                            case '1': { requiredPower = REQUIRED_POWER_ON; requiredInput = REQUIRED_INPUT_DIGITAL_LINK_1; Drive() }
                         }
                     }
                     case 'S-VIDEO': {
-                        switch (cCmdParam[2]) {
-                            case '1': { iRequiredPower = REQUIRED_POWER_ON; iRequiredInput = REQUIRED_INPUT_SVIDEO_1; Drive() }
+                        switch (cmdParam[2]) {
+                            case '1': { requiredPower = REQUIRED_POWER_ON; requiredInput = REQUIRED_INPUT_SVIDEO_1; Drive() }
                         }
                     }
                     case 'COMPOSITE': {
-                        switch (cCmdParam[2]) {
-                            case '1': { iRequiredPower = REQUIRED_POWER_ON; iRequiredInput = REQUIRED_INPUT_VIDEO_1; Drive() }
+                        switch (cmdParam[2]) {
+                            case '1': { requiredPower = REQUIRED_POWER_ON; requiredInput = REQUIRED_INPUT_VIDEO_1; Drive() }
                         }
                     }
                     case 'SDI': {
-                        switch (cCmdParam[2]) {
-                            case '1': { iRequiredPower = REQUIRED_POWER_ON; iRequiredInput = REQUIRED_INPUT_SDI_1; Drive() }
+                        switch (cmdParam[2]) {
+                            case '1': { requiredPower = REQUIRED_POWER_ON; requiredInput = REQUIRED_INPUT_SDI_1; Drive() }
                         }
                     }
                 }
@@ -772,38 +772,38 @@ channel_event[vdvObject, 0] {
     on: {
         switch (channel.channel) {
             case POWER: {
-                if (iRequiredPower) {
-                    switch (iRequiredPower) {
-                        case REQUIRED_POWER_ON: { iRequiredPower = REQUIRED_POWER_OFF; iRequiredInput = 0; Drive() }
-                        case REQUIRED_POWER_OFF: { iRequiredPower = REQUIRED_POWER_ON; Drive() }
+                if (requiredPower) {
+                    switch (requiredPower) {
+                        case REQUIRED_POWER_ON: { requiredPower = REQUIRED_POWER_OFF; requiredInput = 0; Drive() }
+                        case REQUIRED_POWER_OFF: { requiredPower = REQUIRED_POWER_ON; Drive() }
                     }
                 }
                 else {
                     switch (uProj.Display.PowerState.Actual) {
-                        case ACTUAL_POWER_ON: { iRequiredPower = REQUIRED_POWER_OFF; iRequiredInput = 0; Drive() }
-                        case ACTUAL_POWER_OFF: { iRequiredPower = REQUIRED_POWER_ON; Drive() }
+                        case ACTUAL_POWER_ON: { requiredPower = REQUIRED_POWER_OFF; requiredInput = 0; Drive() }
+                        case ACTUAL_POWER_OFF: { requiredPower = REQUIRED_POWER_ON; Drive() }
                     }
                 }
             }
-            case PWR_ON: { iRequiredPower = REQUIRED_POWER_ON; Drive() }
-            case PWR_OFF: { iRequiredPower = REQUIRED_POWER_OFF; iRequiredInput = 0; Drive() }
+            case PWR_ON: { requiredPower = REQUIRED_POWER_ON; Drive() }
+            case PWR_OFF: { requiredPower = REQUIRED_POWER_OFF; requiredInput = 0; Drive() }
             case PIC_MUTE: {
-                if (iRequiredShutter) {
-                    switch (iRequiredShutter) {
-                        case REQUIRED_SHUTTER_CLOSED: { iRequiredPower = REQUIRED_SHUTTER_OPEN; Drive() }
-                        case REQUIRED_SHUTTER_OPEN: { iRequiredPower = REQUIRED_SHUTTER_CLOSED; Drive() }
+                if (requiredShutter) {
+                    switch (requiredShutter) {
+                        case REQUIRED_SHUTTER_CLOSED: { requiredPower = REQUIRED_SHUTTER_OPEN; Drive() }
+                        case REQUIRED_SHUTTER_OPEN: { requiredPower = REQUIRED_SHUTTER_CLOSED; Drive() }
                     }
                 }
                 else {
                     switch (uProj.Display.VideoMute.Actual) {
-                        case ACTUAL_SHUTTER_CLOSED: { iRequiredPower = REQUIRED_SHUTTER_OPEN; Drive() }
-                        case ACTUAL_SHUTTER_OPEN: { iRequiredPower = REQUIRED_SHUTTER_CLOSED; Drive() }
+                        case ACTUAL_SHUTTER_CLOSED: { requiredPower = REQUIRED_SHUTTER_OPEN; Drive() }
+                        case ACTUAL_SHUTTER_OPEN: { requiredPower = REQUIRED_SHUTTER_CLOSED; Drive() }
                     }
                 }
             }
             case PIC_MUTE_ON: {
                 if (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    iRequiredShutter = REQUIRED_SHUTTER_CLOSED; Drive()
+                    requiredShutter = REQUIRED_SHUTTER_CLOSED; Drive()
                 }
             }
         }
@@ -812,7 +812,7 @@ channel_event[vdvObject, 0] {
         switch (channel.channel) {
             case PIC_MUTE_ON: {
                 if (uProj.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    iRequiredShutter = REQUIRED_SHUTTER_OPEN; Drive()
+                    requiredShutter = REQUIRED_SHUTTER_OPEN; Drive()
                 }
             }
         }
