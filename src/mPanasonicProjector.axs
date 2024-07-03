@@ -8,9 +8,14 @@ MODULE_NAME='mPanasonicProjector'   (
 #DEFINE USING_NAV_MODULE_BASE_PROPERTY_EVENT_CALLBACK
 #DEFINE USING_NAV_MODULE_BASE_PASSTHRU_EVENT_CALLBACK
 #DEFINE USING_NAV_STRING_GATHER_CALLBACK
+#DEFINE USING_NAV_LOGIC_ENGINE_EVENT_CALLBACK
+#DEFINE USING_NAV_DEVICE_PRIORITY_QUEUE_SEND_NEXT_ITEM_EVENT_CALLBACK
+#DEFINE USING_NAV_DEVICE_PRIORITY_QUEUE_FAILED_RESPONSE_EVENT_CALLBACK
+#include 'NAVFoundation.LogicEngine.axi'
 #include 'NAVFoundation.ModuleBase.axi'
 #include 'NAVFoundation.SocketUtils.axi'
 #include 'NAVFoundation.StringUtils.axi'
+#include 'NAVFoundation.DevicePriorityQueue.axi'
 #include 'NAVFoundation.Cryptography.Md5.axi'
 
 /*
@@ -54,8 +59,7 @@ DEFINE_DEVICE
 (***********************************************************)
 DEFINE_CONSTANT
 
-constant long TL_DRIVE          = 1
-constant long TL_SOCKET_CHECK   = 2
+constant long TL_SOCKET_CHECK           = 1
 
 constant integer REQUIRED_POWER_ON      = 1
 constant integer REQUIRED_POWER_OFF     = 2
@@ -74,6 +78,17 @@ constant integer INPUT_SDI_1            = 6
 constant integer INPUT_HDMI_1           = 7
 constant integer INPUT_DIGITAL_LINK_1   = 8
 
+constant char INPUT_SNAPI_PARAMS[][NAV_MAX_CHARS]   =   {
+                                                            'VGA,1',
+                                                            'RGB,1',
+                                                            'COMPOSITE,1',
+                                                            'S-VIDEO,1',
+                                                            'DVI,1',
+                                                            'SDI,1',
+                                                            'HDMI,1',
+                                                            'DIGITAL_LINK,1'
+                                                        }
+
 constant char INPUT_COMMANDS[][NAV_MAX_CHARS]   =   {
                                                         'RG1',
                                                         'RG2',
@@ -85,8 +100,36 @@ constant char INPUT_COMMANDS[][NAV_MAX_CHARS]   =   {
                                                         'DL1'
                                                     }
 
-constant integer SHUTTER_OPEN       = 1
-constant integer SHUTTER_CLOSED     = 2
+constant integer ASPECT_NORMAL         = 1
+constant integer ASPECT_4X3            = 2
+constant integer ASPECT_WIDE           = 3
+constant integer ASPECT_NATIVE         = 4
+constant integer ASPECT_FULL           = 5
+constant integer ASPECT_H_FIT          = 6
+constant integer ASPECT_V_FIT          = 7
+
+constant char ASPECT_SNAPI_PARAMS[][NAV_MAX_CHARS]  =   {
+                                                            'NORMAL',
+                                                            '4x3',
+                                                            'WIDE',
+                                                            'NATIVE',
+                                                            'FULL',
+                                                            'H_FIT',
+                                                            'V_FIT'
+                                                        }
+
+constant char ASPECT_COMMANDS[][NAV_MAX_CHARS]  =   {
+                                                        '0',    // Normal
+                                                        '1',    // 4x3
+                                                        '2',    // Wide
+                                                        '5',    // Native
+                                                        '6',    // Full
+                                                        '9',    // H-Fit
+                                                        '10'    // V-Fit
+                                                    }
+
+constant integer VIDEO_MUTE_ON      = 1
+constant integer VIDEO_MUTE_OFF     = 2
 
 constant integer FREEZE_ON          = 1
 constant integer FREEZE_OFF         = 2
@@ -96,7 +139,7 @@ constant integer GET_POWER          = 2
 constant integer GET_INPUT          = 3
 constant integer GET_LAMP1          = 4
 constant integer GET_LAMP2          = 5
-constant integer GET_SHUTT          = 6
+constant integer GET_VIDEO_MUTE     = 6
 constant integer GET_ASPECT         = 7
 constant integer GET_FREEZE         = 8
 constant integer GET_VOLUME         = 9
@@ -124,10 +167,7 @@ DEFINE_VARIABLE
 
 volatile _NAVProjector object
 
-volatile long driveTick[]   = { 200 }
 volatile long socketCheck[] = { 3000 }
-
-volatile integer loop = 0
 
 volatile integer pollSequence = GET_MODEL
 volatile integer pollSequenceEnabled[9]    = { true, true, true, true, true, true, true, true, true }
@@ -171,6 +211,11 @@ define_function SendString(char payload[]) {
         payload = "NAVMd5GetHash(GetMd5Message(credential, md5Seed)), payload"
     }
 
+    NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
+                NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_TO,
+                                            dvPort,
+                                            payload))
+
     send_string dvPort, "payload"
 }
 
@@ -181,20 +226,24 @@ define_function char[NAV_MAX_BUFFER] BuildProtocol(char message[]) {
 
 
 define_function SendQuery(integer query) {
+    if (priorityQueue.Busy) {
+        return
+    }
+
     if (!pollSequenceEnabled[query]) {
         return
     }
 
     switch (query) {
-        case GET_MODEL:     { SendString(BuildProtocol("'QID'")) }
-        case GET_POWER:     { SendString(BuildProtocol("'Q$S'")) }
-        case GET_INPUT:     { SendString(BuildProtocol("'QIN'")) }
-        case GET_LAMP1:     { SendString(BuildProtocol(LAMP_1_QUERY_COMMANDS[lamp1QueryCommand])) }
-        case GET_LAMP2:     { SendString(BuildProtocol("'Q$L:2'")) }
-        case GET_SHUTT:     { SendString(BuildProtocol("'QSH'")) }
-        case GET_ASPECT:    { SendString(BuildProtocol('QSE')) }
-        case GET_VOLUME:    { SendString(BuildProtocol("'QAV'")) }
-        default:            { SendQuery(GET_POWER) }
+        case GET_MODEL:         { EnqueueQueryItem(BuildProtocol('QID')) }
+        case GET_POWER:         { EnqueueQueryItem(BuildProtocol('Q$S')) }
+        case GET_INPUT:         { EnqueueQueryItem(BuildProtocol('QIN')) }
+        case GET_LAMP1:         { EnqueueQueryItem(BuildProtocol(LAMP_1_QUERY_COMMANDS[lamp1QueryCommand])) }
+        case GET_LAMP2:         { EnqueueQueryItem(BuildProtocol('Q$L:2')) }
+        case GET_VIDEO_MUTE:    { EnqueueQueryItem(BuildProtocol('QSH')) }
+        case GET_ASPECT:        { EnqueueQueryItem(BuildProtocol('QSE')) }
+        case GET_VOLUME:        { EnqueueQueryItem(BuildProtocol('QAV')) }
+        default:                { SendQuery(GET_POWER) }
     }
 }
 
@@ -216,27 +265,38 @@ define_function Reset() {
     module.Device.IsInitialized = false
 
     connectionStarted = false
-    loop = 0
-    NAVTimelineStop(TL_DRIVE)
+
+    NAVLogicEngineStop()
 }
 
 
 define_function SetPower(integer state) {
     switch (state) {
-        case REQUIRED_POWER_ON: { SendString(BuildProtocol("'PON'")) }
-        case REQUIRED_POWER_OFF: { SendString(BuildProtocol("'POF'")) }
+        case REQUIRED_POWER_ON:     { EnqueueCommandItem(BuildProtocol('PON')) }
+        case REQUIRED_POWER_OFF:    { EnqueueCommandItem(BuildProtocol('POF')) }
     }
 }
 
 
-define_function SetInput(integer input) { SendString(BuildProtocol("'IIS:', INPUT_COMMANDS[input]")) }
+define_function SetInput(integer input) {
+    EnqueueCommandItem(BuildProtocol("'IIS:', INPUT_COMMANDS[input]"))
+}
 
-define_function SetVolume(sinteger level) { SendString(BuildProtocol("'AVL:', itoa(level)")) }
+
+define_function SetAspect(integer aspect) {
+    EnqueueCommandItem(BuildProtocol("'VSE:', ASPECT_COMMANDS[aspect]"))
+}
+
+
+define_function SetVolume(sinteger level) {
+    EnqueueCommandItem(BuildProtocol("'AVL:', itoa(level)"))
+}
+
 
 define_function SetShutter(integer state) {
     switch (state) {
-        case SHUTTER_OPEN: { SendString(BuildProtocol("'OSH:0'")) }
-        case SHUTTER_CLOSED: { SendString(BuildProtocol("'OSH:1'")) }
+        case VIDEO_MUTE_ON:     { EnqueueCommandItem(BuildProtocol('OSH:1')) }
+        case VIDEO_MUTE_OFF:    { EnqueueCommandItem(BuildProtocol('OSH:0')) }
     }
 }
 
@@ -246,7 +306,49 @@ define_function integer ModeIsIp(integer mode) {
 }
 
 
-define_function Drive() {
+define_function MaintainSocketConnection() {
+    if (module.Device.SocketConnection.IsConnected) {
+        return
+    }
+
+    NAVClientSocketOpen(dvPort.PORT,
+                        module.Device.SocketConnection.Address,
+                        module.Device.SocketConnection.Port,
+                        IP_TCP)
+}
+
+
+define_function char[NAV_MAX_BUFFER] GetMd5Message(_NAVCredential credential, char md5Seed[]) {
+    return "credential.Username, ':', credential.Password, ':', md5Seed"
+}
+
+
+define_function EnqueueCommandItem(char item[]) {
+    NAVDevicePriorityQueueEnqueue(priorityQueue, item, true)
+}
+
+
+define_function EnqueueQueryItem(char item[]) {
+    NAVDevicePriorityQueueEnqueue(priorityQueue, item, false)
+}
+
+
+#IF_DEFINED USING_NAV_DEVICE_PRIORITY_QUEUE_SEND_NEXT_ITEM_EVENT_CALLBACK
+define_function NAVDevicePriorityQueueSendNextItemEventCallback(char item[]) {
+    SendString(item)
+}
+#END_IF
+
+
+#IF_DEFINED USING_NAV_DEVICE_PRIORITY_QUEUE_FAILED_RESPONSE_EVENT_CALLBACK
+define_function NAVDevicePriorityQueueFailedResponseEventCallback(_NAVDevicePriorityQueue queue) {
+    module.Device.IsCommunicating = false
+}
+#END_IF
+
+
+#IF_DEFINED USING_NAV_LOGIC_ENGINE_EVENT_CALLBACK
+define_function NAVLogicEngineEventCallback(_NAVLogicEngineEvent args) {
     if (!connectionStarted && ModeIsIp(mode)) {
         return;
     }
@@ -259,16 +361,19 @@ define_function Drive() {
         return;
     }
 
-    loop++
+    if (priorityQueue.Busy) {
+        return;
+    }
 
-    switch (loop) {
-        case 1:
-        case 6:
-        case 11:
-        case 16: { SendQuery(pollSequence); return }
-        case 21: { loop = 0; return }
-        default: {
-            if (module.CommandBusy) { return }
+    switch (args.Name) {
+        case NAV_LOGIC_ENGINE_EVENT_QUERY: {
+            SendQuery(pollSequence)
+            return
+        }
+        case NAV_LOGIC_ENGINE_EVENT_ACTION: {
+            if (module.CommandBusy) {
+                return
+            }
 
             if (object.Display.PowerState.Required && (object.Display.PowerState.Required == object.Display.PowerState.Actual)) { object.Display.PowerState.Required = 0; return }
             if (object.Display.Input.Required && (object.Display.Input.Required == object.Display.Input.Actual)) { object.Display.Input.Required = 0; return }
@@ -296,28 +401,20 @@ define_function Drive() {
                 SetShutter(object.Display.VideoMute.Required)
                 module.CommandBusy = true
                 wait 10 module.CommandBusy = false
-                pollSequence = GET_SHUTT
+                pollSequence = GET_VIDEO_MUTE
                 return
             }
 
-            if (object.Freeze.Required && (object.Display.PowerState.Actual == ACTUAL_POWER_ON) && (object.Freeze.Required != object.Freeze.Actual)) {
-                //SetShutter(object.Display.VideoMute.Required)
-                module.CommandBusy = true
-                wait 10 module.CommandBusy = false
-                pollSequence = GET_FREEZE
-                return
-            }
+            // if (object.Freeze.Required && (object.Display.PowerState.Actual == ACTUAL_POWER_ON) && (object.Freeze.Required != object.Freeze.Actual)) {
+            //     //SetShutter(object.Display.VideoMute.Required)
+            //     module.CommandBusy = true
+            //     wait 10 module.CommandBusy = false
+            //     pollSequence = GET_FREEZE
+            //     return
+            // }
 
             if (object.Display.Aspect.Required && (object.Display.PowerState.Required == ACTUAL_POWER_ON) && (object.Display.Aspect.Required != object.Display.Aspect.Actual)) {
-                switch (object.Display.Aspect.Required) {
-                    case 1: { SendString(BuildProtocol('VSE:0')) }    //Normal
-                    case 2: { SendString(BuildProtocol('VSE:5')) }    //Native
-                    case 3: { SendString(BuildProtocol('VSE:2')) }    //Wide
-                    case 4: { SendString(BuildProtocol('VSE:1')) }    //4x3
-                    case 5: { SendString(BuildProtocol('VSE:9')) }    //H-Fit
-                    case 6: { SendString(BuildProtocol('VSE:10')) }    //V-Fit
-                    case 7: { SendString(BuildProtocol('VSE:6')) }    //Full
-                }
+                SetAspect(object.Display.Aspect.Required)
 
                 module.CommandBusy = true
                 wait 10 module.CommandBusy = false
@@ -326,37 +423,30 @@ define_function Drive() {
             }
 
             if (autoImageRequired && (object.Display.PowerState.Required == ACTUAL_POWER_ON)) {
-                SendString(BuildProtocol('OAS')); module.CommandBusy = true; wait 10 module.CommandBusy = false;    //Auto Image
+                EnqueueCommandItem(BuildProtocol('OAS')); module.CommandBusy = true; wait 10 module.CommandBusy = false;    //Auto Image
                 autoImageRequired = false
             }
 
-            if ([vdvObject, MENU_FUNC]) { SendString(BuildProtocol('OMN')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
-            if ([vdvObject, MENU_UP]) { SendString(BuildProtocol('OCU')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
-            if ([vdvObject, MENU_DN]) { SendString(BuildProtocol('OCD')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
-            if ([vdvObject, MENU_LT]) { SendString(BuildProtocol('OCL')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
-            if ([vdvObject, MENU_RT]) { SendString(BuildProtocol('OCR')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
-            if ([vdvObject, MENU_SELECT]) { SendString(BuildProtocol('OEN')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
-            if ([vdvObject, MENU_CANCEL]) { SendString(BuildProtocol('OBK')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
-            if ([vdvObject, MENU_DISPLAY]) { SendString(BuildProtocol('OOS')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
+            if ([vdvObject, MENU_FUNC]) { EnqueueCommandItem(BuildProtocol('OMN')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
+            if ([vdvObject, MENU_UP]) { EnqueueCommandItem(BuildProtocol('OCU')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
+            if ([vdvObject, MENU_DN]) { EnqueueCommandItem(BuildProtocol('OCD')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
+            if ([vdvObject, MENU_LT]) { EnqueueCommandItem(BuildProtocol('OCL')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
+            if ([vdvObject, MENU_RT]) { EnqueueCommandItem(BuildProtocol('OCR')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
+            if ([vdvObject, MENU_SELECT]) { EnqueueCommandItem(BuildProtocol('OEN')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
+            if ([vdvObject, MENU_CANCEL]) { EnqueueCommandItem(BuildProtocol('OBK')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
+            if ([vdvObject, MENU_DISPLAY]) { EnqueueCommandItem(BuildProtocol('OOS')) module.CommandBusy = true; wait 5 module.CommandBusy = false }
         }
     }
 }
+#END_IF
 
 
-define_function MaintainSocketConnection() {
-    if (module.Device.SocketConnection.IsConnected) {
-        return
+define_function char[NAV_MAX_BUFFER] GetError(integer error) {
+    switch (error) {
+        case 401:   { return 'Command cannot be executed' }
+        case 402:   { return 'Invalid parameter' }
+        default:    { return 'Unknown error' }
     }
-
-    NAVClientSocketOpen(dvPort.PORT,
-                        module.Device.SocketConnection.Address,
-                        module.Device.SocketConnection.Port,
-                        IP_TCP)
-}
-
-
-define_function char[NAV_MAX_BUFFER] GetMd5Message(_NAVCredential credential, char md5Seed[]) {
-    return "credential.Username, ':', credential.Password, ':', md5Seed"
 }
 
 
@@ -377,7 +467,6 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
 
     select {
         active (NAVStartsWith(data, 'NTCONTROL')): {
-            //Connection Started
             data = NAVStripLeft(data, 10);
 
             secureCommandRequired = atoi(remove_string(data, ' ', 1));
@@ -387,126 +476,226 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
             }
 
             connectionStarted = true;
-            loop = 0;
-            Drive();
         }
         active (NAVStartsWith(data, MODE_HEADER[mode])): {
+            stack_var char last[NAV_MAX_BUFFER]
+
+            last = NAVDevicePriorityQueueGetLastMessage(priorityQueue)
+            // NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
+            //             "'mPanasonicProjector => Last Message: [', last, MODE_DELIMITER[mode], ']'")
+
             remove_string(data, MODE_HEADER[mode], 1)
 
             if (NAVStartsWith(data, 'ER')) {
                 pollSequence = GET_MODEL
+
+                // ER401 - Command cannot be executed
+                // ER402 - Invalid parameter
+
+                // Common reasons for ER401:
+                // - The projector is in a state where the command cannot be executed
+                // --- Some commands cannot be executed when the projector is in standby
+                // --- Sending 'QIN' (Get Input) when the projector is in standby will return ER401
+                // --- Sending 'QSE' (Get Aspect) when the projector isn't displaying an image will return ER401
+
+                remove_string(data, 'ER', 1)
+
+                NAVErrorLog(NAV_LOG_LEVEL_ERROR,
+                            "'mPanasonicProjector => Error: Command [', last, MODE_DELIMITER[mode], '] failed with error code ', data, ': ',
+                                GetError(atoi(data))")
+
+                NAVDevicePriorityQueueGoodResponse(priorityQueue)
                 return
             }
 
-            switch (pollSequence) {
-                case GET_POWER: {
+            // Only process the response if the last command was a query
+            remove_string(last, ';', 1)
+            if (!NAVStartsWith(last, 'Q')) {
+                NAVDevicePriorityQueueGoodResponse(priorityQueue)
+                return
+            }
+
+            select {
+                active (NAVContains(last, 'QID')): {
+                    select {
+                        active (NAVContains(data, 'RZ')): {
+                            pollSequenceEnabled[GET_LAMP1] = false
+                            pollSequenceEnabled[GET_LAMP2] = false
+                            pollSequence = GET_POWER
+                        }
+                        active (NAVContains(data, 'MZ')): {
+                            pollSequenceEnabled[GET_LAMP1] = false
+                            pollSequenceEnabled[GET_LAMP2] = false
+                            pollSequence = GET_POWER
+                        }
+                        active (NAVContains(data, 'RW')): {
+                            pollSequenceEnabled[GET_LAMP1] = false
+                            pollSequenceEnabled[GET_LAMP2] = false
+                            pollSequence = GET_POWER
+                        }
+                        active (NAVContains(data, 'FRQ')): {
+                            pollSequenceEnabled[GET_LAMP1] = false
+                            pollSequenceEnabled[GET_LAMP2] = false
+                            pollSequence = GET_POWER
+                        }
+                        active (NAVContains(data, 'FW')): {
+                            lamp1QueryCommand = 1
+                            pollSequenceEnabled[GET_LAMP2] = false
+                            pollSequence = GET_POWER
+                        }
+                        active (NAVContains(data, 'DX')): {
+                            lamp1QueryCommand = 1
+                            pollSequenceEnabled[GET_LAMP2] = false
+                            pollSequence = GET_POWER
+                        }
+                    }
+                }
+                active (NAVContains(last, 'Q$S')): {
                     switch (data) {
-                        case '0': { object.Display.PowerState.Actual = ACTUAL_POWER_OFF; if (pollSequenceEnabled[GET_LAMP1]) pollSequence = GET_LAMP1; }
-                        case '1': { object.Display.PowerState.Actual = ACTUAL_WARMING; if (pollSequenceEnabled[GET_LAMP1]) pollSequence = GET_LAMP1; }
+                        case '0': {
+                            object.Display.PowerState.Actual = ACTUAL_POWER_OFF
+
+                            if (pollSequenceEnabled[GET_LAMP1]) {
+                                pollSequence = GET_LAMP1
+                            }
+                        }
+                        case '1': {
+                            object.Display.PowerState.Actual = ACTUAL_WARMING
+
+                            if (pollSequenceEnabled[GET_LAMP1]) {
+                                pollSequence = GET_LAMP1
+                            }
+                        }
+                        case '3': {
+                            object.Display.PowerState.Actual = ACTUAL_COOLING
+
+                            if (pollSequenceEnabled[GET_LAMP1]) {
+                                pollSequence = GET_LAMP1
+                            }
+                        }
                         case '2': {
                             object.Display.PowerState.Actual = ACTUAL_POWER_ON
 
                             select {
-                                active (!object.Display.Input.Initialized): { pollSequence = GET_INPUT }
-                                active (!object.Display.VideoMute.Initialized): { pollSequence = GET_SHUTT }
-                                //active (!object.Display.Volume.Level.Initialized): { pollSequence = GET_VOLUME }
-                                //active (!object.Freeze.Initialized): { pollSequence = GET_FREEZE }
-                                //active (!object.Display.Aspect.Initialized): { pollSequence = GET_ASPECT }
+                                active (!object.Display.Input.Initialized): {
+                                    pollSequence = GET_INPUT
+                                }
+                                active (!object.Display.VideoMute.Initialized): {
+                                    pollSequence = GET_VIDEO_MUTE
+                                }
+                                // active (!object.Display.Volume.Level.Initialized): {
+                                //     pollSequence = GET_VOLUME
+                                // }
+                                // active (!object.Freeze.Initialized): {
+                                //     pollSequence = GET_FREEZE
+                                // }
+                                // active (!object.Display.Aspect.Initialized): {
+                                //     pollSequence = GET_ASPECT
+                                // }
                                 active (true): {
-                                    if (pollSequenceEnabled[GET_LAMP1]) { pollSequence = GET_LAMP1 }
+                                    if (pollSequenceEnabled[GET_LAMP1]) {
+                                        pollSequence = GET_LAMP1
+                                    }
                                 }
                             }
                         }
-                        case '3': { object.Display.PowerState.Actual = ACTUAL_COOLING; if (pollSequenceEnabled[GET_LAMP1]) pollSequence = GET_LAMP1; }
                     }
                 }
-                case GET_INPUT: {
-                    select {
-                        active (NAVContains(data, "'RG1'")): { object.Display.Input.Actual = INPUT_VGA_1; pollSequence = GET_POWER; object.Display.Input.Initialized = true }
-                        active (NAVContains(data, "'RG2'")): { object.Display.Input.Actual = INPUT_RGB_1; pollSequence = GET_POWER; object.Display.Input.Initialized = true }
-                        active (NAVContains(data, "'VID'")): { object.Display.Input.Actual = INPUT_VIDEO_1; pollSequence = GET_POWER; object.Display.Input.Initialized = true }
-                        active (NAVContains(data, "'SVD'")): { object.Display.Input.Actual = INPUT_SVIDEO_1; pollSequence = GET_POWER; object.Display.Input.Initialized = true }
-                        active (NAVContains(data, "'DVI'")): { object.Display.Input.Actual = INPUT_DVI_1; pollSequence = GET_POWER; object.Display.Input.Initialized = true }
-                        active (NAVContains(data, "'SDI'")): { object.Display.Input.Actual = INPUT_SDI_1; pollSequence = GET_POWER; object.Display.Input.Initialized = true }
-                        active (NAVContains(data, "'HD1'")): { object.Display.Input.Actual = INPUT_HDMI_1; pollSequence = GET_POWER; object.Display.Input.Initialized = true }
-                        active (NAVContains(data, "'DL1'")): { object.Display.Input.Actual = INPUT_DIGITAL_LINK_1; pollSequence = GET_POWER; object.Display.Input.Initialized = true }
+                active (NAVContains(last, 'QIN')): {
+                    stack_var integer input
+
+                    input = NAVFindInArrayString(INPUT_COMMANDS, data)
+
+                    if (input) {
+                        object.Display.Input.Actual = input
+                        object.Display.Input.Initialized = true
+                    }
+
+                    pollSequence = GET_POWER
+                }
+                active (NAVContains(last, 'Q$L')): {
+                    stack_var integer hours
+
+                    hours = atoi(data)
+
+                    if (hours != object.LampHours[1].Actual) {
+                        object.LampHours[1].Actual = hours
+                        send_string vdvObject, "'LAMPTIME-', itoa(object.LampHours[1].Actual)"
+                    }
+
+                    if (pollSequenceEnabled[GET_LAMP2]) {
+                        pollSequence = GET_LAMP2;
+                    }
+                    else {
+                        pollSequence = GET_POWER;
                     }
                 }
-                case GET_LAMP1: {
-                    if (length_array(data) == 4) {
-                        stack_var integer temp
+                active (NAVContains(last, 'Q$L:2')): {
+                    stack_var integer hours
 
-                        temp = atoi(data)
+                    hours = atoi(data)
 
-                        if (temp != object.LampHours[1].Actual) {
-                            object.LampHours[1].Actual = temp
-                            send_string vdvObject, "'LAMPTIME-', itoa(object.LampHours[1].Actual)"
-                        }
-
-                        if (pollSequenceEnabled[GET_LAMP2]) {
-                            pollSequence = GET_LAMP2;
-                        }
-                        else {
-                            pollSequence = GET_POWER;
-                        }
+                    if (hours != object.LampHours[2].Actual) {
+                        object.LampHours[2].Actual = hours
+                        send_string vdvObject, "'LAMPTIME-', itoa(object.LampHours[2].Actual)"
                     }
+
+                    pollSequence = GET_POWER
                 }
-                case GET_LAMP2: {
-                    if (length_array(data) == 4) {
-                        stack_var integer temp
-
-                        temp = atoi(data)
-
-                        if (temp != object.LampHours[2].Actual) {
-                            object.LampHours[2].Actual = temp
-                            send_string vdvObject, "'LAMPTIME-', itoa(object.LampHours[2].Actual)"
-                        }
-
-                        pollSequence = GET_POWER
-                    }
-                }
-                case GET_SHUTT: {
+                active (NAVContains(last, 'QSH')): {
                     switch (data) {
-                        case '0': { object.Display.VideoMute.Actual = SHUTTER_OPEN; pollSequence = GET_POWER; object.Display.VideoMute.Initialized = true }
-                        case '1': { object.Display.VideoMute.Actual = SHUTTER_CLOSED; pollSequence = GET_POWER; object.Display.VideoMute.Initialized = true }
+                        case '0': {
+                            object.Display.VideoMute.Actual = VIDEO_MUTE_OFF
+                            object.Display.VideoMute.Initialized = true
+                            pollSequence = GET_POWER
+                        }
+                        case '1': {
+                            object.Display.VideoMute.Actual = VIDEO_MUTE_ON
+                            object.Display.VideoMute.Initialized = true
+                            pollSequence = GET_POWER
+                        }
                     }
                 }
-                case GET_FREEZE: {
-                    switch (data) {
-                        case '0': { object.Freeze.Actual = FREEZE_OFF; pollSequence = GET_POWER; object.Freeze.Initialized = true }
-                        case '1': { object.Freeze.Actual = FREEZE_ON; pollSequence = GET_POWER; object.Freeze.Initialized = true }
+                active (NAVContains(last, 'QSE')): {
+                    stack_var integer aspect
+
+                    aspect = NAVFindInArrayString(ASPECT_COMMANDS, data)
+
+                    if (aspect) {
+                        object.Display.Aspect.Actual = aspect
+                        object.Display.Aspect.Initialized = true
                     }
+
+                    pollSequence = GET_POWER
                 }
-                case GET_ASPECT: {
-                    switch (atoi(data)) {
-                        case 0: { object.Display.Aspect.Actual = 1; pollSequence = GET_POWER; object.Display.Aspect.Initialized = true }
-                        case 5: { object.Display.Aspect.Actual = 2; pollSequence = GET_POWER; object.Display.Aspect.Initialized = true}
-                        case 2: { object.Display.Aspect.Actual = 3; pollSequence = GET_POWER; object.Display.Aspect.Initialized = true}
-                        case 1: { object.Display.Aspect.Actual = 4; pollSequence = GET_POWER; object.Display.Aspect.Initialized = true}
-                        case 10: { object.Display.Aspect.Actual = 6; pollSequence = GET_POWER; object.Display.Aspect.Initialized = true}
-                        case 9: { object.Display.Aspect.Actual = 5; pollSequence = GET_POWER; object.Display.Aspect.Initialized = true}
-                        case 6: { object.Display.Aspect.Actual = 7; pollSequence = GET_POWER; object.Display.Aspect.Initialized = true }
+                active (NAVContains(last, 'QAV')): {
+                    stack_var sinteger level
+
+                    level = atoi(data)
+
+                    if (level != object.Display.Volume.Level.Actual) {
+                        object.Display.Volume.Level.Actual = level
+                        NAVSendLevel(vdvObject, VOL_LVL, type_cast(level * 255 / 63))
                     }
-                }
-                case GET_VOLUME: {
-                    object.Display.Volume.Level.Actual = atoi(data)
-                    send_level vdvObject, 1, object.Display.Volume.Level.Actual * 255 / 63
+
                     object.Display.Volume.Level.Initialized = true
                     pollSequence = GET_POWER
                 }
-                case GET_MODEL: {    //Model
-                    select {
-                        active (NAVContains(data, 'RZ') > 0): { pollSequenceEnabled[GET_LAMP1] = 0; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
-                        active (NAVContains(data, 'MZ') > 0): { pollSequenceEnabled[GET_LAMP1] = 0; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
-                        active (NAVContains(data, 'RW') > 0): { pollSequenceEnabled[GET_LAMP1] = 0; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
-                        active (NAVContains(data, 'FRQ') > 0): { pollSequenceEnabled[GET_LAMP1] = 0; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
-                        active (NAVContains(data, 'FW') > 0): { lamp1QueryCommand = 1; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
-                        active (NAVContains(data, 'DX') > 0): { lamp1QueryCommand = 1; pollSequenceEnabled[GET_LAMP2] = 0; pollSequence = GET_POWER; }
-                    }
-                }
+                // active (NAVContains(last, 'QSH')): {
+                //     switch (data) {
+                //         case '0': { object.Freeze.Actual = FREEZE_OFF; pollSequence = GET_POWER; object.Freeze.Initialized = true }
+                //         case '1': { object.Freeze.Actual = FREEZE_ON; pollSequence = GET_POWER; object.Freeze.Initialized = true }
+                //     }
+                // }
+                // active (true): {
+                //     pollSequence = GET_POWER
+                // }
             }
+
+            NAVDevicePriorityQueueGoodResponse(priorityQueue)
         }
     }
+
 }
 #END_IF
 
@@ -565,9 +754,84 @@ define_function NAVModulePassthruEventCallback(_NAVModulePassthruEvent event) {
         return
     }
 
-    SendString(event.Payload)
+    EnqueueCommandItem(event.Payload)
 }
 #END_IF
+
+
+define_function HandleSnapiMessage(_NAVSnapiMessage message, tdata data) {
+    switch (message.Header) {
+        case 'POWER': {
+            switch (message.Parameter[1]) {
+                case 'ON': {
+                    object.Display.PowerState.Required = REQUIRED_POWER_ON
+                }
+                case 'OFF': {
+                    object.Display.PowerState.Required = REQUIRED_POWER_OFF
+                    object.Display.Input.Required = 0
+                }
+            }
+        }
+        case 'MUTE': {
+            if (object.Display.PowerState.Actual != ACTUAL_POWER_ON) {
+                return
+            }
+
+            switch (message.Parameter[1]) {
+                case 'ON': {
+                    object.Display.VideoMute.Required = VIDEO_MUTE_ON
+                }
+                case 'OFF': {
+                    object.Display.VideoMute.Required = VIDEO_MUTE_OFF
+                }
+            }
+        }
+        case 'ADJUST': {
+            if (object.Display.PowerState.Actual != ACTUAL_POWER_ON) {
+                return
+            }
+
+            autoImageRequired = true
+        }
+        case 'ASPECT': {
+            if (object.Display.PowerState.Actual != ACTUAL_POWER_ON) {
+                return
+            }
+
+            object.Display.Aspect.Required = NAVFindInArrayString(ASPECT_SNAPI_PARAMS, message.Parameter[1])
+        }
+        case 'VOLUME': {
+            switch (message.Parameter[1]) {
+                case 'ABS': {
+                    SetVolume(atoi(message.Parameter[2]))
+                    pollSequence = GET_VOLUME
+                }
+                default: {
+                    SetVolume(atoi(message.Parameter[1]) * 63 / 255)
+                    pollSequence = GET_VOLUME
+                }
+            }
+        }
+        case 'INPUT': {
+            stack_var integer input
+            stack_var char inputCommand[NAV_MAX_CHARS]
+
+            inputCommand = NAVArrayJoinString(message.Parameter, ',')
+
+            input = NAVFindInArrayString(INPUT_SNAPI_PARAMS, inputCommand)
+
+            if (input <= 0) {
+                NAVErrorLog(NAV_LOG_LEVEL_WARNING,
+                            "'mPanasonicProjector => Invalid input: ', inputCommand")
+
+                return
+            }
+
+            object.Display.PowerState.Required = REQUIRED_POWER_ON
+            object.Display.Input.Required = input
+        }
+    }
+}
 
 
 (***********************************************************)
@@ -598,7 +862,7 @@ data_event[dvPort] {
             module.Device.SocketConnection.IsConnected = true
         }
 
-        NAVTimelineStart(TL_DRIVE, driveTick, TIMELINE_ABSOLUTE, TIMELINE_REPEAT)
+        NAVLogicEngineStart()
     }
     string: {
         CommunicationTimeOut(30)
@@ -623,6 +887,9 @@ data_event[dvPort] {
         if (data.device.number == 0) {
             Reset()
         }
+
+        NAVErrorLog(NAV_LOG_LEVEL_ERROR,
+                    "'mPanasonicProjector => OnError: ', NAVGetSocketError(type_cast(data.number))")
     }
 }
 
@@ -643,96 +910,7 @@ data_event[vdvObject] {
 
         NAVParseSnapiMessage(data.text, message)
 
-        switch (message.Header) {
-            case 'POWER': {
-                switch (message.Parameter[1]) {
-                    case 'ON': { object.Display.PowerState.Required = REQUIRED_POWER_ON; Drive() }
-                    case 'OFF': { object.Display.PowerState.Required = REQUIRED_POWER_OFF; object.Display.Input.Required = 0; Drive() }
-                }
-            }
-            case 'MUTE': {
-                if (object.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    switch (message.Parameter[1]) {
-                        case 'ON': { object.Display.VideoMute.Required = SHUTTER_CLOSED; Drive() }
-                        case 'OFF': { object.Display.VideoMute.Required = SHUTTER_OPEN; Drive() }
-                    }
-                }
-            }
-            case 'ADJUST': {
-                if (object.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    autoImageRequired = true
-                }
-            }
-            case 'ASPECT': {
-                if (object.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    switch (message.Parameter[1]) {
-                        case 'NORMAL': { object.Display.Aspect.Required = 1; Drive() }
-                        case 'NATIVE': { object.Display.Aspect.Required = 2; Drive() }
-                        case 'WIDE': { object.Display.Aspect.Required = 3; Drive() }
-                        case '4x3': { object.Display.Aspect.Required = 4; Drive() }
-                        case 'H_FIT': { object.Display.Aspect.Required = 5; Drive() }
-                        case 'V_FIT': { object.Display.Aspect.Required = 6; Drive() }
-                        case 'FULL': { object.Display.Aspect.Required = 7; Drive() }
-                    }
-                }
-            }
-            case 'VOLUME': {
-                switch (message.Parameter[1]) {
-                    case 'ABS': {
-                        SetVolume(atoi(message.Parameter[2]))
-                        pollSequence = GET_VOLUME
-                    }
-                    default: {
-                        SetVolume(atoi(message.Parameter[1]) * 63 / 255)
-                        pollSequence = GET_VOLUME
-                    }
-                }
-            }
-            case 'INPUT': {
-                switch (message.Parameter[1]) {
-                    case 'VGA': {
-                        switch (message.Parameter[2]) {
-                            case '1': { object.Display.PowerState.Required = REQUIRED_POWER_ON; object.Display.Input.Required = INPUT_VGA_1; Drive() }
-                        }
-                    }
-                    case 'RGB': {
-                        switch (message.Parameter[2]) {
-                            case '1': { object.Display.PowerState.Required = REQUIRED_POWER_ON; object.Display.Input.Required = INPUT_RGB_1; Drive() }
-                        }
-                    }
-                    case 'HDMI': {
-                        switch (message.Parameter[2]) {
-                            case '1': { object.Display.PowerState.Required = REQUIRED_POWER_ON; object.Display.Input.Required = INPUT_HDMI_1; Drive() }
-                        }
-                    }
-                    case 'DVI': {
-                        switch (message.Parameter[2]) {
-                            case '1': { object.Display.PowerState.Required = REQUIRED_POWER_ON; object.Display.Input.Required = INPUT_DVI_1; Drive() }
-                        }
-                    }
-                    case 'DIGITAL_LINK': {
-                        switch (message.Parameter[2]) {
-                            case '1': { object.Display.PowerState.Required = REQUIRED_POWER_ON; object.Display.Input.Required = INPUT_DIGITAL_LINK_1; Drive() }
-                        }
-                    }
-                    case 'S-VIDEO': {
-                        switch (message.Parameter[2]) {
-                            case '1': { object.Display.PowerState.Required = REQUIRED_POWER_ON; object.Display.Input.Required = INPUT_SVIDEO_1; Drive() }
-                        }
-                    }
-                    case 'COMPOSITE': {
-                        switch (message.Parameter[2]) {
-                            case '1': { object.Display.PowerState.Required = REQUIRED_POWER_ON; object.Display.Input.Required = INPUT_VIDEO_1; Drive() }
-                        }
-                    }
-                    case 'SDI': {
-                        switch (message.Parameter[2]) {
-                            case '1': { object.Display.PowerState.Required = REQUIRED_POWER_ON; object.Display.Input.Required = INPUT_SDI_1; Drive() }
-                        }
-                    }
-                }
-            }
-        }
+        HandleSnapiMessage(message, data)
     }
 }
 
@@ -743,36 +921,46 @@ channel_event[vdvObject, 0] {
             case POWER: {
                 if (object.Display.PowerState.Required) {
                     switch (object.Display.PowerState.Required) {
-                        case REQUIRED_POWER_ON: { object.Display.PowerState.Required = REQUIRED_POWER_OFF; object.Display.Input.Required = 0; Drive() }
-                        case REQUIRED_POWER_OFF: { object.Display.PowerState.Required = REQUIRED_POWER_ON; Drive() }
+                        case REQUIRED_POWER_ON: {
+                            object.Display.PowerState.Required = REQUIRED_POWER_OFF
+                            object.Display.Input.Required = 0
+                        }
+                        case REQUIRED_POWER_OFF: {
+                            object.Display.PowerState.Required = REQUIRED_POWER_ON
+                        }
                     }
                 }
                 else {
                     switch (object.Display.PowerState.Actual) {
-                        case ACTUAL_POWER_ON: { object.Display.PowerState.Required = REQUIRED_POWER_OFF; object.Display.Input.Required = 0; Drive() }
-                        case ACTUAL_POWER_OFF: { object.Display.PowerState.Required = REQUIRED_POWER_ON; Drive() }
+                        case ACTUAL_POWER_ON: {
+                            object.Display.PowerState.Required = REQUIRED_POWER_OFF
+                            object.Display.Input.Required = 0
+                        }
+                        case ACTUAL_POWER_OFF: {
+                            object.Display.PowerState.Required = REQUIRED_POWER_ON
+                        }
                     }
                 }
             }
-            case PWR_ON: { object.Display.PowerState.Required = REQUIRED_POWER_ON; Drive() }
-            case PWR_OFF: { object.Display.PowerState.Required = REQUIRED_POWER_OFF; object.Display.Input.Required = 0; Drive() }
+            case PWR_ON: { object.Display.PowerState.Required = REQUIRED_POWER_ON }
+            case PWR_OFF: { object.Display.PowerState.Required = REQUIRED_POWER_OFF; object.Display.Input.Required = 0 }
             case PIC_MUTE: {
                 if (object.Display.VideoMute.Required) {
                     switch (object.Display.VideoMute.Required) {
-                        case SHUTTER_CLOSED: { object.Display.PowerState.Required = SHUTTER_OPEN; Drive() }
-                        case SHUTTER_OPEN: { object.Display.PowerState.Required = SHUTTER_CLOSED; Drive() }
+                        case VIDEO_MUTE_ON: { object.Display.PowerState.Required = VIDEO_MUTE_OFF }
+                        case VIDEO_MUTE_OFF: { object.Display.PowerState.Required = VIDEO_MUTE_ON }
                     }
                 }
                 else {
                     switch (object.Display.VideoMute.Actual) {
-                        case SHUTTER_CLOSED: { object.Display.PowerState.Required = SHUTTER_OPEN; Drive() }
-                        case SHUTTER_OPEN: { object.Display.PowerState.Required = SHUTTER_CLOSED; Drive() }
+                        case VIDEO_MUTE_ON: { object.Display.PowerState.Required = VIDEO_MUTE_OFF }
+                        case VIDEO_MUTE_OFF: { object.Display.PowerState.Required = VIDEO_MUTE_ON }
                     }
                 }
             }
             case PIC_MUTE_ON: {
                 if (object.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    object.Display.VideoMute.Required = SHUTTER_CLOSED; Drive()
+                    object.Display.VideoMute.Required = VIDEO_MUTE_ON
                 }
             }
         }
@@ -781,7 +969,7 @@ channel_event[vdvObject, 0] {
         switch (channel.channel) {
             case PIC_MUTE_ON: {
                 if (object.Display.PowerState.Actual == ACTUAL_POWER_ON) {
-                    object.Display.VideoMute.Required = SHUTTER_OPEN; Drive()
+                    object.Display.VideoMute.Required = VIDEO_MUTE_OFF
                 }
             }
         }
@@ -789,9 +977,10 @@ channel_event[vdvObject, 0] {
 }
 
 
-timeline_event[TL_DRIVE] { Drive() }
+timeline_event[TL_SOCKET_CHECK] {
+    MaintainSocketConnection()
+}
 
-timeline_event[TL_SOCKET_CHECK] { MaintainSocketConnection() }
 
 timeline_event[TL_NAV_FEEDBACK] {
     [vdvObject, NAV_IP_CONNECTED]	= (module.Device.SocketConnection.IsConnected)
@@ -800,8 +989,9 @@ timeline_event[TL_NAV_FEEDBACK] {
 
     [vdvObject, LAMP_WARMING_FB]    = (object.Display.PowerState.Actual == ACTUAL_WARMING)
     [vdvObject, LAMP_COOLING_FB]    = (object.Display.PowerState.Actual == ACTUAL_COOLING)
-    [vdvObject, PIC_MUTE_FB]        = (object.Display.VideoMute.Actual == SHUTTER_CLOSED)
+    [vdvObject, PIC_MUTE_FB]        = (object.Display.VideoMute.Actual == VIDEO_MUTE_ON)
     [vdvObject, POWER_FB] = (object.Display.PowerState.Actual == ACTUAL_POWER_ON)
+
     [vdvObject, 31]    =    (object.Display.Input.Actual == INPUT_VGA_1)
     [vdvObject, 32]    =    (object.Display.Input.Actual == INPUT_RGB_1)
     [vdvObject, 33]    =    (object.Display.Input.Actual == INPUT_VIDEO_1)
