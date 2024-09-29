@@ -816,6 +816,7 @@ define_function HandleSnapiMessage(_NAVSnapiMessage message, tdata data) {
             stack_var integer input
             stack_var char inputCommand[NAV_MAX_CHARS]
 
+            NAVTrimStringArray(message.Parameter)
             inputCommand = NAVArrayJoinString(message.Parameter, ',')
 
             input = NAVFindInArrayString(INPUT_SNAPI_PARAMS, inputCommand)
