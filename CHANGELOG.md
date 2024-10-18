@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.1](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/compare/v2.0.0...v2.0.1) (2024-10-18)
+
+### 🐛 Bug Fixes
+
+-   ensure correct files are included in manifest ([24c36bc](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/commit/24c36bc116df37b522e4694815820bd1fcc4f586))
+
 ## [2.0.0](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/compare/v1.0.0...v2.0.0) (2024-10-01)
 
 ### ⚠ BREAKING CHANGES
