@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.3](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/compare/v2.0.2...v2.0.3) (2025-01-16)
+
+### 🐛 Bug Fixes
+
+- fix path update in install script ([2e334cc](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/commit/2e334cc4089db35c0208ce3c7c8bbb0e0c0388cf))
+
 ## [2.0.2](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/compare/v2.0.1...v2.0.2) (2025-01-16)
 
 ### 🐛 Bug Fixes
