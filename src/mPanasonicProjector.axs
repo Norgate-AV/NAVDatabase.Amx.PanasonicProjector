@@ -211,10 +211,12 @@ define_function SendString(char payload[]) {
         payload = "NAVMd5GetHash(GetMd5Message(credential, md5Seed)), payload"
     }
 
-    NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
-                NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_TO,
-                                            dvPort,
-                                            payload))
+    if (ModeIsIp(mode)) {
+        NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
+                    NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_TO,
+                                                dvPort,
+                                                payload))
+    }
 
     send_string dvPort, "payload"
 }
@@ -458,10 +460,12 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
     data = args.Data
     delimiter = args.Delimiter
 
-    NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
-                NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_PARSING_STRING_FROM,
-                                            dvPort,
-                                            data))
+    if (ModeIsIp(mode)) {
+        NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
+                    NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_PARSING_STRING_FROM,
+                                                dvPort,
+                                                data))
+    }
 
     data = NAVStripRight(data, length_array(delimiter))
 
@@ -481,8 +485,6 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
             stack_var char last[NAV_MAX_BUFFER]
 
             last = NAVDevicePriorityQueueGetLastMessage(priorityQueue)
-            // NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
-            //             "'mPanasonicProjector => Last Message: [', last, MODE_DELIMITER[mode], ']'")
 
             remove_string(data, MODE_HEADER[mode], 1)
 
@@ -868,10 +870,13 @@ data_event[dvPort] {
     string: {
         CommunicationTimeOut(30)
 
-        NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
-                    NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_FROM,
-                                                data.device,
-                                                data.text))
+        if (data.device.port == 0) {
+            NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
+                        NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_FROM,
+                                                    data.device,
+                                                    data.text))
+        }
+
         select {
             active(true): {
                 NAVStringGather(module.RxBuffer, MODE_DELIMITER[mode])
@@ -903,11 +908,6 @@ data_event[vdvObject] {
     }
     command: {
         stack_var _NAVSnapiMessage message
-
-        NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
-                    NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_COMMAND_FROM,
-                                                data.device,
-                                                data.text))
 
         NAVParseSnapiMessage(data.text, message)
 
