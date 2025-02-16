@@ -870,7 +870,7 @@ data_event[dvPort] {
     string: {
         CommunicationTimeOut(30)
 
-        if (data.device.port == 0) {
+        if (data.device.number == 0) {
             NAVErrorLog(NAV_LOG_LEVEL_DEBUG,
                         NAVFormatStandardLogMessage(NAV_STANDARD_LOG_MESSAGE_TYPE_STRING_FROM,
                                                     data.device,
