@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.5](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/compare/v2.0.4...v2.0.5) (2025-02-16)
+
+### 🐛 Bug Fixes
+
+- ref data.device.number for logging ([0fce563](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/commit/0fce56369e2cd43986502273e0744dd246834dda))
+
 ## [2.0.4](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/compare/v2.0.3...v2.0.4) (2025-02-16)
 
 ### 🚀 Performance
