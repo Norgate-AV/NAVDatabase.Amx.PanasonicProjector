@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.2.0](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/compare/v2.1.0...v2.2.0) (2025-03-12)
+
+### 🌟 Features
+
+- update to support NAVFoundation.Amx v2.0.0 ([a69d126](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/commit/a69d1263d86b51ed238daa42560f173007f4e32c))
+
 ## [2.1.0](https://github.com/Norgate-AV/NAVDatabase.Amx.PanasonicProjector/compare/v2.0.5...v2.1.0) (2025-02-17)
 
 ### 🌟 Features
