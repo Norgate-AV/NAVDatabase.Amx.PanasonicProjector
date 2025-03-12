@@ -16,6 +16,7 @@ MODULE_NAME='mPanasonicProjector'   (
 #include 'NAVFoundation.SocketUtils.axi'
 #include 'NAVFoundation.StringUtils.axi'
 #include 'NAVFoundation.DevicePriorityQueue.axi'
+#include 'NAVFoundation.Encoding.axi'
 #include 'NAVFoundation.Cryptography.Md5.axi'
 
 /*
@@ -208,7 +209,7 @@ define_function SendString(char payload[]) {
     payload = "payload, MODE_DELIMITER[mode]"
 
     if (secureCommandRequired && ModeIsIp(mode)) {
-        payload = "NAVMd5GetHash(GetMd5Message(credential, md5Seed)), payload"
+        payload = "NAVHexToString(NAVMd5GetHash(GetMd5Message(credential, md5Seed))), payload"
     }
 
     if (ModeIsIp(mode)) {
@@ -254,9 +255,11 @@ define_function CommunicationTimeOut(integer timeout) {
     cancel_wait 'TimeOut'
 
     module.Device.IsCommunicating = true
+    UpdateFeedback()
 
     wait (timeout * 10) 'TimeOut' {
         module.Device.IsCommunicating = false
+        UpdateFeedback()
     }
 }
 
@@ -265,6 +268,7 @@ define_function Reset() {
     module.Device.SocketConnection.IsConnected = false
     module.Device.IsCommunicating = false
     module.Device.IsInitialized = false
+    UpdateFeedback()
 
     connectionStarted = false
 
@@ -345,6 +349,7 @@ define_function NAVDevicePriorityQueueSendNextItemEventCallback(char item[]) {
 #IF_DEFINED USING_NAV_DEVICE_PRIORITY_QUEUE_FAILED_RESPONSE_EVENT_CALLBACK
 define_function NAVDevicePriorityQueueFailedResponseEventCallback(_NAVDevicePriorityQueue queue) {
     module.Device.IsCommunicating = false
+    UpdateFeedback()
 }
 #END_IF
 
@@ -556,6 +561,7 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
                     switch (data) {
                         case '0': {
                             object.Display.PowerState.Actual = ACTUAL_POWER_OFF
+                            UpdateFeedback()
 
                             if (pollSequenceEnabled[GET_LAMP1]) {
                                 pollSequence = GET_LAMP1
@@ -563,6 +569,7 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
                         }
                         case '1': {
                             object.Display.PowerState.Actual = ACTUAL_WARMING
+                            UpdateFeedback()
 
                             if (pollSequenceEnabled[GET_LAMP1]) {
                                 pollSequence = GET_LAMP1
@@ -570,6 +577,7 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
                         }
                         case '3': {
                             object.Display.PowerState.Actual = ACTUAL_COOLING
+                            UpdateFeedback()
 
                             if (pollSequenceEnabled[GET_LAMP1]) {
                                 pollSequence = GET_LAMP1
@@ -577,6 +585,7 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
                         }
                         case '2': {
                             object.Display.PowerState.Actual = ACTUAL_POWER_ON
+                            UpdateFeedback()
 
                             select {
                                 active (!object.Display.Input.Initialized): {
@@ -611,6 +620,7 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
                     if (input) {
                         object.Display.Input.Actual = input
                         object.Display.Input.Initialized = true
+                        UpdateFeedback()
                     }
 
                     pollSequence = GET_POWER
@@ -649,11 +659,13 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
                         case '0': {
                             object.Display.VideoMute.Actual = VIDEO_MUTE_OFF
                             object.Display.VideoMute.Initialized = true
+                            UpdateFeedback()
                             pollSequence = GET_POWER
                         }
                         case '1': {
                             object.Display.VideoMute.Actual = VIDEO_MUTE_ON
                             object.Display.VideoMute.Initialized = true
+                            UpdateFeedback()
                             pollSequence = GET_POWER
                         }
                     }
@@ -837,6 +849,27 @@ define_function HandleSnapiMessage(_NAVSnapiMessage message, tdata data) {
 }
 
 
+define_function UpdateFeedback() {
+    [vdvObject, NAV_IP_CONNECTED]	= (module.Device.SocketConnection.IsConnected)
+    [vdvObject, DEVICE_COMMUNICATING] = (module.Device.IsCommunicating)
+    [vdvObject, DATA_INITIALIZED] = (module.Device.IsInitialized)
+
+    [vdvObject, LAMP_WARMING_FB]    = (object.Display.PowerState.Actual == ACTUAL_WARMING)
+    [vdvObject, LAMP_COOLING_FB]    = (object.Display.PowerState.Actual == ACTUAL_COOLING)
+    [vdvObject, PIC_MUTE_FB]        = (object.Display.VideoMute.Actual == VIDEO_MUTE_ON)
+    [vdvObject, POWER_FB] = (object.Display.PowerState.Actual == ACTUAL_POWER_ON)
+
+    [vdvObject, 31]    =    (object.Display.Input.Actual == INPUT_VGA_1)
+    [vdvObject, 32]    =    (object.Display.Input.Actual == INPUT_RGB_1)
+    [vdvObject, 33]    =    (object.Display.Input.Actual == INPUT_VIDEO_1)
+    [vdvObject, 34]    =    (object.Display.Input.Actual == INPUT_SVIDEO_1)
+    [vdvObject, 35]    =    (object.Display.Input.Actual == INPUT_DVI_1)
+    [vdvObject, 36]    =    (object.Display.Input.Actual == INPUT_SDI_1)
+    [vdvObject, 37]    =    (object.Display.Input.Actual == INPUT_HDMI_1)
+    [vdvObject, 38]    =    (object.Display.Input.Actual == INPUT_DIGITAL_LINK_1)
+}
+
+
 (***********************************************************)
 (*                STARTUP CODE GOES BELOW                  *)
 (***********************************************************)
@@ -863,6 +896,7 @@ data_event[dvPort] {
 
         if (data.device.number == 0) {
             module.Device.SocketConnection.IsConnected = true
+            UpdateFeedback()
         }
 
         NAVLogicEngineStart()
@@ -983,29 +1017,7 @@ timeline_event[TL_SOCKET_CHECK] {
 }
 
 
-timeline_event[TL_NAV_FEEDBACK] {
-    [vdvObject, NAV_IP_CONNECTED]	= (module.Device.SocketConnection.IsConnected)
-    [vdvObject, DEVICE_COMMUNICATING] = (module.Device.IsCommunicating)
-    [vdvObject, DATA_INITIALIZED] = (module.Device.IsInitialized)
-
-    [vdvObject, LAMP_WARMING_FB]    = (object.Display.PowerState.Actual == ACTUAL_WARMING)
-    [vdvObject, LAMP_COOLING_FB]    = (object.Display.PowerState.Actual == ACTUAL_COOLING)
-    [vdvObject, PIC_MUTE_FB]        = (object.Display.VideoMute.Actual == VIDEO_MUTE_ON)
-    [vdvObject, POWER_FB] = (object.Display.PowerState.Actual == ACTUAL_POWER_ON)
-
-    [vdvObject, 31]    =    (object.Display.Input.Actual == INPUT_VGA_1)
-    [vdvObject, 32]    =    (object.Display.Input.Actual == INPUT_RGB_1)
-    [vdvObject, 33]    =    (object.Display.Input.Actual == INPUT_VIDEO_1)
-    [vdvObject, 34]    =    (object.Display.Input.Actual == INPUT_SVIDEO_1)
-    [vdvObject, 35]    =    (object.Display.Input.Actual == INPUT_DVI_1)
-    [vdvObject, 36]    =    (object.Display.Input.Actual == INPUT_SDI_1)
-    [vdvObject, 37]    =    (object.Display.Input.Actual == INPUT_HDMI_1)
-    [vdvObject, 38]    =    (object.Display.Input.Actual == INPUT_DIGITAL_LINK_1)
-}
-
-
 (***********************************************************)
 (*                     END OF PROGRAM                      *)
 (*        DO NOT PUT ANY CODE BELOW THIS COMMENT           *)
 (***********************************************************)
-
