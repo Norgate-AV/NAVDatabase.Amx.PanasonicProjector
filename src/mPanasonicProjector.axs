@@ -62,6 +62,8 @@ DEFINE_CONSTANT
 
 constant long TL_SOCKET_CHECK           = 1
 
+constant long TL_SOCKET_CHECK_INTERVAL[] = { 3000 }
+
 constant integer REQUIRED_POWER_ON      = 1
 constant integer REQUIRED_POWER_OFF     = 2
 
@@ -166,12 +168,14 @@ DEFINE_TYPE
 (***********************************************************)
 DEFINE_VARIABLE
 
+volatile _NAVModule module
+volatile _NAVLogicEngine engine
+volatile _NAVDevicePriorityQueue queue
+
 volatile _NAVProjector object
 
-volatile long socketCheck[] = { 3000 }
-
 volatile integer pollSequence = GET_MODEL
-volatile integer pollSequenceEnabled[9]    = { true, true, true, true, true, true, true, true, true }
+volatile char pollSequenceEnabled[9]    = { true, true, true, true, true, true, true, true, true }
 
 volatile integer lamp1QueryCommand
 
@@ -179,12 +183,12 @@ volatile char id[2] = 'ZZ'
 
 volatile char baudRate[NAV_MAX_CHARS]    = '9600'
 
-volatile integer autoImageRequired
+volatile char autoImageRequired
 
 volatile integer mode = MODE_SERIAL
 
-volatile integer secureCommandRequired
-volatile integer connectionStarted
+volatile char secureCommandRequired
+volatile char connectionStarted
 volatile char md5Seed[255]
 
 volatile _NAVCredential credential = { 'admin1', 'password' }
@@ -229,7 +233,7 @@ define_function char[NAV_MAX_BUFFER] BuildProtocol(char message[]) {
 
 
 define_function SendQuery(integer query) {
-    if (priorityQueue.Busy) {
+    if (queue.Busy) {
         return
     }
 
@@ -272,7 +276,7 @@ define_function Reset() {
 
     connectionStarted = false
 
-    NAVLogicEngineStop()
+    NAVLogicEngineStop(engine)
 }
 
 
@@ -330,12 +334,12 @@ define_function char[NAV_MAX_BUFFER] GetMd5Message(_NAVCredential credential, ch
 
 
 define_function EnqueueCommandItem(char item[]) {
-    NAVDevicePriorityQueueEnqueue(priorityQueue, item, true)
+    NAVDevicePriorityQueueEnqueue(queue, item, true)
 }
 
 
 define_function EnqueueQueryItem(char item[]) {
-    NAVDevicePriorityQueueEnqueue(priorityQueue, item, false)
+    NAVDevicePriorityQueueEnqueue(queue, item, false)
 }
 
 
@@ -368,7 +372,7 @@ define_function NAVLogicEngineEventCallback(_NAVLogicEngineEvent args) {
         return;
     }
 
-    if (priorityQueue.Busy) {
+    if (queue.Busy) {
         return;
     }
 
@@ -489,7 +493,7 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
         active (NAVStartsWith(data, MODE_HEADER[mode])): {
             stack_var char last[NAV_MAX_BUFFER]
 
-            last = NAVDevicePriorityQueueGetLastMessage(priorityQueue)
+            last = NAVDevicePriorityQueueGetLastMessage(queue)
 
             remove_string(data, MODE_HEADER[mode], 1)
 
@@ -511,14 +515,14 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
                             "'mPanasonicProjector => Error: Command [', last, MODE_DELIMITER[mode], '] failed with error code ', data, ': ',
                                 GetError(atoi(data))")
 
-                NAVDevicePriorityQueueGoodResponse(priorityQueue)
+                NAVDevicePriorityQueueGoodResponse(queue)
                 return
             }
 
             // Only process the response if the last command was a query
             remove_string(last, ';', 1)
             if (!NAVStartsWith(last, 'Q')) {
-                NAVDevicePriorityQueueGoodResponse(priorityQueue)
+                NAVDevicePriorityQueueGoodResponse(queue)
                 return
             }
 
@@ -706,7 +710,7 @@ define_function NAVStringGatherCallback(_NAVStringGatherResult args) {
                 // }
             }
 
-            NAVDevicePriorityQueueGoodResponse(priorityQueue)
+            NAVDevicePriorityQueueGoodResponse(queue)
         }
     }
 
@@ -723,7 +727,10 @@ define_function NAVModulePropertyEventCallback(_NAVModulePropertyEvent event) {
     switch (event.Name) {
         case NAV_MODULE_PROPERTY_EVENT_IP_ADDRESS: {
             module.Device.SocketConnection.Address = NAVTrimString(event.Args[1])
-            NAVTimelineStart(TL_SOCKET_CHECK, socketCheck, TIMELINE_ABSOLUTE, TIMELINE_REPEAT)
+            NAVTimelineStart(TL_SOCKET_CHECK,
+                                TL_SOCKET_CHECK_INTERVAL,
+                                TIMELINE_ABSOLUTE,
+                                TIMELINE_REPEAT)
         }
         case NAV_MODULE_PROPERTY_EVENT_PORT: {
             module.Device.SocketConnection.Port = atoi(event.Args[1])
@@ -874,6 +881,10 @@ define_function UpdateFeedback() {
 (*                STARTUP CODE GOES BELOW                  *)
 (***********************************************************)
 DEFINE_START {
+    NAVModuleInit(module)
+    NAVLogicEngineInit(engine)
+    NAVDevicePriorityQueueInit(queue)
+
     create_buffer dvPort, module.RxBuffer.Data
     module.Device.SocketConnection.Socket = dvPort.PORT
     module.Device.SocketConnection.Port = DEFAULT_IP_PORT
@@ -899,7 +910,7 @@ data_event[dvPort] {
             UpdateFeedback()
         }
 
-        NAVLogicEngineStart()
+        NAVLogicEngineStart(engine)
     }
     string: {
         CommunicationTimeOut(30)
@@ -1014,6 +1025,16 @@ channel_event[vdvObject, 0] {
 
 timeline_event[TL_SOCKET_CHECK] {
     MaintainSocketConnection()
+}
+
+
+timeline_event[TL_NAV_LOGIC_ENGINE] {
+    NAVLogicEngineDrive(engine, timeline)
+}
+
+
+timeline_event[TL_NAV_DEVICE_PRIORITY_QUEUE_FAILED_RESPONSE] {
+    NAVDevicePriorityQueueFailedResponse(queue)
 }
 
 
